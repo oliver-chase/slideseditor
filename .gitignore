@@ -1,0 +1,4 @@
+# OliverCode public/private runtime boundary
+.env.local
+.secrets/*
+!.secrets/README.md

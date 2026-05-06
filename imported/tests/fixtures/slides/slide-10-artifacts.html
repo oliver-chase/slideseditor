@@ -1,0 +1,191 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      .page {
+        position: relative;
+        width: 1900px;
+        height: 1060px;
+        background: linear-gradient(135deg, #0f172a 0%, #312e81 52%, #0f766e 100%);
+        overflow: hidden;
+      }
+
+      .headline {
+        position: absolute;
+        left: 112px;
+        top: 74px;
+        width: 420px;
+        font-size: 28px;
+        line-height: 34px;
+        color: #f8fafc;
+        font-family: "Avenir Next", Arial, sans-serif;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .main-headline {
+        position: absolute;
+        left: 112px;
+        top: 118px;
+        width: 770px;
+        font-size: 62px;
+        line-height: 70px;
+        color: #f8fafc;
+        font-family: Georgia, "Times New Roman", serif;
+        letter-spacing: -0.02em;
+      }
+
+      .deck-body {
+        position: absolute;
+        left: 116px;
+        top: 330px;
+        width: 560px;
+        font-size: 22px;
+        line-height: 34px;
+        color: rgba(226, 232, 240, 0.92);
+        font-family: "Avenir Next", Arial, sans-serif;
+      }
+
+      .delivery-cycle {
+        position: absolute;
+        left: 118px;
+        top: 730px;
+        width: 420px;
+        font-size: 24px;
+        line-height: 30px;
+        color: #cbd5e1;
+        font-family: "Avenir Next", Arial, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      .metric {
+        position: absolute;
+        left: 122px;
+        top: 782px;
+        width: 220px;
+        font-size: 96px;
+        line-height: 96px;
+        color: #22d3ee;
+        font-family: "Avenir Next", Arial, sans-serif;
+        font-weight: 700;
+      }
+
+      .metric-label {
+        position: absolute;
+        left: 126px;
+        top: 894px;
+        width: 250px;
+        font-size: 18px;
+        color: #7dd3fc;
+        font-family: "Avenir Next", Arial, sans-serif;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .art {
+        position: absolute;
+        width: 300px;
+        min-height: 344px;
+        border-radius: 28px;
+        background: rgba(15, 23, 42, 0.88);
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        box-shadow: 0 24px 44px rgba(2, 6, 23, 0.28);
+        color: #e2e8f0;
+        overflow: hidden;
+      }
+
+      .art::before {
+        content: "";
+        position: absolute;
+        left: 24px;
+        top: 24px;
+        width: 10px;
+        height: 76px;
+        border-radius: 999px;
+        background: #22d3ee;
+      }
+
+      .art .an {
+        position: absolute;
+        left: 56px;
+        top: 28px;
+        width: 64px;
+        font-size: 52px;
+        line-height: 1;
+        color: #f8fafc;
+        font-family: Georgia, "Times New Roman", serif;
+      }
+
+      .art .al {
+        position: absolute;
+        left: 56px;
+        top: 100px;
+        width: 220px;
+        font-size: 30px;
+        line-height: 36px;
+        color: #f8fafc;
+        font-family: "Avenir Next", Arial, sans-serif;
+        font-weight: 700;
+      }
+
+      .art .ad {
+        position: absolute;
+        left: 56px;
+        top: 168px;
+        width: 268px;
+        font-size: 18px;
+        line-height: 28px;
+        color: rgba(226, 232, 240, 0.9);
+        font-family: "Avenir Next", Arial, sans-serif;
+      }
+
+      .logo {
+        position: absolute;
+        right: 94px;
+        bottom: 52px;
+        width: 120px;
+        height: 120px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page" data-slide-root="1">
+      <div class="headline">What We Leave Behind</div>
+      <h1 class="main-headline">What We Build Next</h1>
+      <p class="deck-body">
+        This sample preserves the editorial rhythm of the source deck so the canvas can be edited immediately without rebuilding the structure from scratch.
+      </p>
+      <div class="delivery-cycle">Delivery cycle</div>
+      <div class="metric">2-week</div>
+      <div class="metric-label">Cyan delivery marker</div>
+      <article class="art card" style="left:1070px;top:92px;">
+        <div class="an">01</div>
+        <div class="al">Instrument the intake path</div>
+        <div class="ad">Capture the source HTML, preserve layout intent, and reject invalid payloads before parsing.</div>
+      </article>
+      <article class="art card" style="left:1390px;top:92px;">
+        <div class="an">02</div>
+        <div class="al">Normalize the canonical slide</div>
+        <div class="ad">Keep source units and coordinate intent intact while rendering at the editor viewport scale.</div>
+      </article>
+      <article class="art card" style="left:1070px;top:514px;">
+        <div class="an">03</div>
+        <div class="al">Protect the editable surface</div>
+        <div class="ad">Imported layers remain movable, resizable, duplicable, and safe to autosave as canonical JSON.</div>
+      </article>
+      <article class="art card" style="left:1390px;top:514px;">
+        <div class="an">04</div>
+        <div class="al">Ship the handoff artifact</div>
+        <div class="ad">Export HTML, PDF, and PPTX from the same SlideDocument model so delivery stays deterministic.</div>
+      </article>
+
+      <img
+        class="logo"
+        alt="V logo"
+        src="data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='60' cy='60' r='54' fill='%230f172a'/%3E%3Cpath d='M28 40h18l14 38 14-38h18l-23 60H51L28 40Z' fill='%2322d3ee'/%3E%3C/svg%3E"
+      />
+    </div>
+  </body>
+</html>

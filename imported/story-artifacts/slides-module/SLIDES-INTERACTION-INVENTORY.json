@@ -1,0 +1,211 @@
+{
+  "module": "slides",
+  "version": 1,
+  "last_updated_story_id": "US-SLD-124",
+  "entries": [
+    {
+      "id": "import-parse-submit",
+      "family": "import",
+      "control": "Parse HTML button",
+      "frontend_handler": "handleParse",
+      "backend_contract": "POST /api/slides action=parse-html",
+      "success_state": "Imported layers render and first editable layer is auto-selected.",
+      "failure_state": "Validation or parser warning/error shown without blanking workspace.",
+      "test_refs": [
+        "US-SLD-010 preflight validation blocks empty and recovers on next parse",
+        "US-SLD-050 parsing HTML auto-selects an imported layer so editor fields are immediately editable"
+      ]
+    },
+    {
+      "id": "import-file-upload",
+      "family": "import",
+      "control": "Upload HTML file picker",
+      "frontend_handler": "openFilePicker, handleFileInputChange",
+      "backend_contract": "frontend-only preflight before parse action",
+      "success_state": ".html/.htm payload populates textarea and parses successfully.",
+      "failure_state": "Unsupported or empty file payload is blocked with explicit error copy.",
+      "test_refs": [
+        "US-SLD-055 accepts .htm uploads and rejects empty or plain-text upload payloads"
+      ]
+    },
+    {
+      "id": "editor-drag-layer",
+      "family": "editor",
+      "control": "Canvas drag for selected layer",
+      "frontend_handler": "handlePointerMove",
+      "backend_contract": "frontend-only pending save/autosave sync",
+      "success_state": "Selected layer position updates with guardrails and snap support.",
+      "failure_state": "Locked layers remain immutable.",
+      "test_refs": [
+        "US-SLD-021 supports drag movement and keyboard nudge on selected canvas layers",
+        "SLD-FE-340 shows snapping guides and snaps dragged layers to nearby targets",
+        "US-SLD-027 locked layers remain immutable across edit controls while unlocked layers still update"
+      ]
+    },
+    {
+      "id": "editor-resize-layer",
+      "family": "editor",
+      "control": "Resize handles",
+      "frontend_handler": "handleResizeStart, handleResizeMove",
+      "backend_contract": "frontend-only pending save/autosave sync",
+      "success_state": "Layer dimensions update within min/max bounds.",
+      "failure_state": "Out-of-bound or locked-layer mutations are rejected.",
+      "test_refs": [
+        "US-SLD-021 supports resize handles with width and height guardrails",
+        "US-SLD-027 locked layers remain immutable across edit controls while unlocked layers still update"
+      ]
+    },
+    {
+      "id": "editor-multiselect-align-distribute",
+      "family": "editor",
+      "control": "Align/distribute controls and align-to-slide buttons",
+      "frontend_handler": "applyAlignment, applyDistribution",
+      "backend_contract": "frontend-only pending save/autosave sync",
+      "success_state": "Multi-selected layers align/distribute deterministically; single selected layers can align to slide/page.",
+      "failure_state": "Align-to-selection disables when selection cardinality is insufficient; locked layers remain guarded.",
+      "test_refs": [
+        "US-SLD-023 supports shift multi-select, group nudge, align, and distribution feedback",
+        "US-SLD-115 supports PowerPoint-style text and page alignment buttons"
+      ]
+    },
+    {
+      "id": "editor-text-alignment-icons",
+      "family": "editor",
+      "control": "Text alignment icon buttons",
+      "frontend_handler": "applyStyleToSelection",
+      "backend_contract": "frontend-only pending save/autosave sync",
+      "success_state": "Selected text-capable layer alignment updates render and canonical style state.",
+      "failure_state": "Controls disable when no layer is selected.",
+      "test_refs": [
+        "US-SLD-115 supports PowerPoint-style text and page alignment buttons",
+        "toolbar selected state is stable"
+      ]
+    },
+    {
+      "id": "editor-undo-redo",
+      "family": "editor",
+      "control": "Undo/redo toolbar buttons and keyboard shortcuts",
+      "frontend_handler": "handleUndo, handleRedo",
+      "backend_contract": "frontend-only history stack",
+      "success_state": "Prior edits revert/reapply in deterministic order.",
+      "failure_state": "Undo/redo controls disable at history bounds.",
+      "test_refs": [
+        "US-SLD-024 undo and redo work via controls and keyboard shortcuts"
+      ]
+    },
+    {
+      "id": "canvas-aspect-resize",
+      "family": "canvas",
+      "control": "Aspect preset and resize controls",
+      "frontend_handler": "handleApplyCanvasSize",
+      "backend_contract": "frontend-only canonical SlideDocument transformation",
+      "success_state": "Canvas resizes proportionally without layout drift.",
+      "failure_state": "Invalid custom dimensions are blocked with user-visible guidance.",
+      "test_refs": [
+        "US-SLD-054 resizes canvas proportionally without layout reflow drift",
+        "US-SLD-070 adapts constrained layouts intelligently across aspect-ratio changes"
+      ]
+    },
+    {
+      "id": "canvas-safe-crop",
+      "family": "canvas",
+      "control": "Canvas crop apply/reset controls",
+      "frontend_handler": "handleApplyCanvasCrop, handleResetCanvasCrop",
+      "backend_contract": "frontend-only canonical SlideDocument transformation",
+      "success_state": "Crop shifts layer coordinates, updates canvas dimensions, preserves source layers, and can be reset.",
+      "failure_state": "Invalid crop rectangles are blocked without mutating canvas state.",
+      "test_refs": [
+        "US-SLD-123 applies, rejects, and resets safe canvas crop rectangles"
+      ]
+    },
+    {
+      "id": "persistence-save-slide",
+      "family": "save-governance",
+      "control": "Save slide action",
+      "frontend_handler": "handleSave",
+      "backend_contract": "POST /api/slides action=save-slide",
+      "success_state": "Slide persists and appears in My Slides.",
+      "failure_state": "Write errors surface and local state remains recoverable.",
+      "test_refs": [
+        "US-SLD-031 and US-SLD-032 save workflow populates My Slides and template duplication"
+      ]
+    },
+    {
+      "id": "persistence-unsaved-guard",
+      "family": "save-governance",
+      "control": "Unsaved-changes navigation confirm dialog",
+      "frontend_handler": "confirmDiscardChanges",
+      "backend_contract": "frontend-only with autosave lifecycle integration",
+      "success_state": "User can choose stay/discard safely before route transition.",
+      "failure_state": "Silent data loss is blocked.",
+      "test_refs": [
+        "US-SLD-037 prompts before discarding unsaved changes during workspace navigation",
+        "SLD-FE-142 browser back transitions respect unsaved-change guardrails"
+      ]
+    },
+    {
+      "id": "governance-template-transfer",
+      "family": "save-governance",
+      "control": "Transfer template ownership",
+      "frontend_handler": "handleRequestTemplateOwnershipTransfer",
+      "backend_contract": "POST /api/slides action=request-template-ownership-transfer",
+      "success_state": "Transfer request and approvals are audited and visible.",
+      "failure_state": "Unauthorized transitions are blocked with explicit error feedback.",
+      "test_refs": [
+        "SLD-FE-410 and SLD-BE-410 allow template ownership transfer with audit visibility",
+        "SLD-FE-410 and SLD-BE-410 route member ownership transfer through admin approvals"
+      ]
+    },
+    {
+      "id": "export-current-pptx",
+      "family": "export",
+      "control": "Export current slide as PPTX",
+      "frontend_handler": "handleExportCurrentAsPptx",
+      "backend_contract": "POST /api/slides action=request-pptx-export-job + GET /api/slides resource=pptx-export-jobs",
+      "success_state": "PPTX artifact downloads and warnings are surfaced in report context.",
+      "failure_state": "Export failure is surfaced and logged without UI dead-end.",
+      "test_refs": [
+        "SLD-FE-500 exports current slide to PPTX and surfaces unsupported-component warnings"
+      ]
+    },
+    {
+      "id": "export-selected-pptx",
+      "family": "export",
+      "control": "Export selected My Slides rows to PPTX",
+      "frontend_handler": "handleExportSelectedSlidesAsPptx",
+      "backend_contract": "POST /api/slides action=request-pptx-export-job",
+      "success_state": "Multi-slide PPTX export succeeds and audit event is recorded.",
+      "failure_state": "No-selection and backend failure states return explicit guidance.",
+      "test_refs": [
+        "SLD-FE-500 exports selected My Slides rows to one PPTX and records export-pptx activity",
+        "SLD-FE-501 My Slides selection UX supports select-visible and hidden-selection warnings"
+      ]
+    },
+    {
+      "id": "shell-tab-navigation",
+      "family": "shell-navigation",
+      "control": "Workspace tab navigation (Import, My Slides, Template Library, Activity)",
+      "frontend_handler": "setWorkspaceTab",
+      "backend_contract": "frontend-only navigation with lazy data fetches",
+      "success_state": "Tab transitions preserve context and show expected state cards.",
+      "failure_state": "Empty-state routes remain actionable with no dead-end copy.",
+      "test_refs": [
+        "US-SLD-028 library and activity search show actionable empty states instead of dead-end messaging",
+        "slides workspace tabs and chatbot flows remain mobile-safe"
+      ]
+    },
+    {
+      "id": "chatbot-slides-intents",
+      "family": "shell-navigation",
+      "control": "Slides chatbot command quick-actions",
+      "frontend_handler": "dispatchSlidesChatbotIntent",
+      "backend_contract": "frontend intent routing + export/save API calls as needed",
+      "success_state": "Supported intents route correctly within Slides scope.",
+      "failure_state": "Ambiguous or cross-module intents are guarded with recovery guidance.",
+      "test_refs": [
+        "US-SLD-029 slides chatbot commands cover parse, save, export, and workspace navigation intents",
+        "slides chatbot ambiguous intent shows guidance and supports suggestion-based recovery"
+      ]
+    }
+  ]
+}

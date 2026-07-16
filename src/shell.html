@@ -69,6 +69,7 @@
   .layer .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; padding: 2px 6px; border-radius: 4px; flex: 0 0 auto; }
   .layer .tag.text { background: rgba(34,197,94,.15); color: var(--ok); }
   .layer .tag.image { background: rgba(56,189,248,.15); color: var(--img); }
+  .layer .tag.shape { background: rgba(148,163,184,.15); color: #94a3b8; }
   .layer .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .layer .dim { color: var(--muted); flex: 0 0 auto; }
   .empty-note { color: var(--muted); font-size: 13px; }
@@ -179,6 +180,16 @@
     const fill = (c.style && c.style.backgroundFill) || '';
     return /url\(/i.test(fill);
   }
+  function componentText(c) {
+    const d = document.createElement('div');
+    d.innerHTML = sanitize(c.content || '');
+    return (d.textContent || '').trim();
+  }
+  // text = an editable text box; image = a picture; shape = a background-only fill/border.
+  function layerKind(c) {
+    if (isImageComponent(c)) return 'image';
+    return componentText(c) ? 'text' : 'shape';
+  }
 
   // ---- Preview (read-only) ----
   function fitScale() {
@@ -249,20 +260,22 @@
   function renderInspector() {
     const box = $('#inspector');
     if (!state.components.length) { box.innerHTML = '<div class="empty-note">No slide loaded yet.</div>'; return; }
-    const imgCount = state.components.filter(isImageComponent).length;
-    const textCount = state.components.length - imgCount;
-    const rows = state.components.map((c) => {
-      const img = isImageComponent(c);
+    const kinds = state.components.map(layerKind);
+    const textCount = kinds.filter((k) => k === 'text').length;
+    const nonTextCount = kinds.length - textCount;
+    const TAG_LABEL = { text: 'text', image: 'img', shape: 'shape' };
+    const rows = state.components.map((c, i) => {
+      const kind = kinds[i];
       const name = escapeHtml(c.sourceLabel || c.type || 'layer');
       const dim = Math.round(c.width) + '×' + Math.round(c.height || 0);
       return '<li class="layer' + (c.id === state.highlightId ? ' active' : '') + '" data-id="' + escapeHtml(c.id) + '">' +
-        '<span class="tag ' + (img ? 'image' : 'text') + '">' + (img ? 'img' : 'text') + '</span>' +
+        '<span class="tag ' + kind + '">' + TAG_LABEL[kind] + '</span>' +
         '<span class="name">' + name + '</span><span class="dim">' + dim + '</span></li>';
     }).join('');
     box.innerHTML =
       '<div><h2>Converted layers</h2><div class="summary">' +
         '<div class="pill text"><div class="n">' + textCount + '</div><div class="l">text boxes</div></div>' +
-        '<div class="pill image"><div class="n">' + imgCount + '</div><div class="l">picture / shape</div></div>' +
+        '<div class="pill image"><div class="n">' + nonTextCount + '</div><div class="l">picture / shape</div></div>' +
       '</div></div>' +
       '<div><h2>Layers</h2><ul class="layers">' + rows + '</ul></div>';
     box.querySelectorAll('.layer').forEach((li) => li.addEventListener('click', () => {

@@ -588,7 +588,7 @@ function buildShapeXml(
   const typeface = resolveTypeface(component.style.fontFamily)
 
   const spPr = `<p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="${shapeGeom}"><a:avLst/></a:prstGeom>${fillXml}${lineXml}${shadowXml}</p:spPr>`
-  const txBody = `<p:txBody><a:bodyPr wrap="square"/><a:lstStyle/>${buildTextParagraphs(text || component.type, fontSize, textColorHex, align, bold, italic, typeface)}</p:txBody>`
+  const txBody = `<p:txBody><a:bodyPr wrap="square"/><a:lstStyle/>${buildTextParagraphs(text, fontSize, textColorHex, align, bold, italic, typeface)}</p:txBody>`
 
   return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${escXml(component.type + '-' + component.id)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>${spPr}${txBody}</p:sp>`
 }

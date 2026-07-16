@@ -1045,6 +1045,35 @@ function normalizeBorderStyle(value: string | undefined): string | undefined {
   return normalized
 }
 
+// Split a `border` shorthand (e.g. "1px solid #ccc" or "2px dashed red") into its
+// width / style / color parts. Only used when the specific longhand property is
+// absent; otherwise the shorthand color leaks into the color slot and is later
+// rejected by the exporter, dropping the border entirely.
+function parseBorderShorthand(value: string | undefined): { width?: string; style?: string; color?: string } {
+  if (!value) return {}
+  const raw = value.trim()
+  if (!raw) return {}
+
+  const colorFuncOrHex = raw.match(/#[0-9a-fA-F]{3,8}\b|(?:rgb|rgba|hsl|hsla)\([^)]*\)/)
+  let color = colorFuncOrHex ? colorFuncOrHex[0] : undefined
+  let rest = color ? raw.replace(color, ' ') : raw
+
+  const styleMatch = rest.match(/\b(solid|dashed|dotted|double|groove|ridge|inset|outset|none|hidden)\b/i)
+  const style = styleMatch ? styleMatch[0] : undefined
+  if (styleMatch) rest = rest.replace(styleMatch[0], ' ')
+
+  const widthMatch = rest.match(/-?\d*\.?\d+(?:px|em|rem|pt|%)?/)
+  const width = widthMatch ? widthMatch[0] : undefined
+  if (widthMatch) rest = rest.replace(widthMatch[0], ' ')
+
+  if (!color) {
+    const remaining = rest.trim().split(/\s+/).filter(Boolean)
+    if (remaining.length > 0) color = remaining[remaining.length - 1]
+  }
+
+  return { width, style, color }
+}
+
 function extractStyle(
   styleMap: Record<string, string>,
   computedStyle: CSSStyleDeclaration | null,
@@ -1056,9 +1085,10 @@ function extractStyle(
   const fontWeight = parseFontWeight(computedStyle?.fontWeight || styleMap['font-weight'])
   const color = normalizeColor(computedStyle?.color || styleMap.color)
   const { backgroundFill, backgroundColor } = resolveComputedBackground(computedStyle, styleMap)
-  const borderColor = normalizeColor(computedStyle?.borderColor || styleMap.border || styleMap['border-color'])
-  const borderWidth = parsePxLength(computedStyle?.borderWidth || styleMap['border-width'])
-  const borderStyle = normalizeBorderStyle(computedStyle?.borderStyle || styleMap['border-style'])
+  const borderShorthand = parseBorderShorthand(styleMap.border)
+  const borderColor = normalizeColor(computedStyle?.borderColor || styleMap['border-color'] || borderShorthand.color)
+  const borderWidth = parsePxLength(computedStyle?.borderWidth || styleMap['border-width'] || borderShorthand.width)
+  const borderStyle = normalizeBorderStyle(computedStyle?.borderStyle || styleMap['border-style'] || borderShorthand.style)
   const borderRadius = parsePxLength(computedStyle?.borderRadius || styleMap['border-radius'])
   const shadowRaw = (computedStyle?.boxShadow || styleMap['box-shadow'] || '').trim()
   const boxShadow = shadowRaw && shadowRaw.toLowerCase() !== 'none' ? shadowRaw : undefined

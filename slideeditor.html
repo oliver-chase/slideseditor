@@ -1,0 +1,4223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Slides Converter</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #171b22; --panel-2: #1e242e; --line: #2a313c;
+    --text: #e6e9ef; --muted: #9aa4b2; --accent: #7c5cff; --accent-2: #ec4899;
+    --ok: #22c55e; --img: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text); overflow: hidden;
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex: 0 0 auto;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header .spacer { flex: 1; }
+  .btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 12px; font-size: 13px; cursor: pointer;
+  }
+  .btn:hover { border-color: #3a4452; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { background: var(--panel-2); color: var(--muted); border: 0; padding: 7px 12px; font-size: 13px; cursor: pointer; }
+  .seg button.active { background: var(--accent); color: #fff; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #stage {
+    flex: 1; position: relative; overflow: hidden; min-width: 0;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      linear-gradient(45deg, #12161c 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(-45deg, #12161c 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(45deg, transparent 75%, #12161c 75%) -8px 0/16px 16px,
+      linear-gradient(-45deg, transparent 75%, #12161c 75%) -8px 0/16px 16px,
+      #0b0e13;
+  }
+  #empty { position: absolute; color: var(--muted); font-size: 15px; text-align: center; max-width: 440px; line-height: 1.6; }
+  #canvasWrap { position: relative; box-shadow: 0 12px 48px rgba(0,0,0,.5); display: none; }
+  #canvas { position: relative; overflow: hidden; transform-origin: top left; }
+  /* Preview layers are read-only; conversion output is edited in PowerPoint. */
+  .comp { position: absolute; overflow: hidden; }
+  .selbox { position: absolute; outline: 2px solid var(--accent-2); pointer-events: none; z-index: 5; }
+  aside {
+    flex: 0 0 300px; background: var(--panel); border-left: 1px solid var(--line);
+    padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+  }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px; }
+  .summary { display: flex; gap: 8px; }
+  .pill { flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .pill .n { font-size: 20px; font-weight: 600; }
+  .pill .l { font-size: 11px; color: var(--muted); }
+  .pill.text .n { color: var(--ok); }
+  .pill.image .n { color: var(--img); }
+  .layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .layer { display: flex; align-items: center; gap: 8px; padding: 7px 9px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 12px; }
+  .layer:hover { border-color: #3a4452; }
+  .layer.active { border-color: var(--accent-2); }
+  .layer .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; padding: 2px 6px; border-radius: 4px; flex: 0 0 auto; }
+  .layer .tag.text { background: rgba(34,197,94,.15); color: var(--ok); }
+  .layer .tag.image { background: rgba(56,189,248,.15); color: var(--img); }
+  .layer .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer .dim { color: var(--muted); flex: 0 0 auto; }
+  .empty-note { color: var(--muted); font-size: 13px; }
+  #importModal { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.6); }
+  #importModal.show { display: flex; }
+  .modal-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; width: 560px; max-width: 92vw; }
+  .modal-card h3 { margin: 0 0 6px; font-size: 15px; }
+  .modal-card p { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+  .modal-card textarea { width: 100%; height: 200px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 200; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 13px; max-width: 72vw; display: none; }
+  #toast.show { display: block; }
+  #toast.warn { border-color: var(--accent-2); }
+  .warnlist { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; max-height: 120px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Slides Converter</h1>
+  <div class="seg" id="presetSeg">
+    <button data-preset="16-9" class="active">16:9</button>
+    <button data-preset="1-1">1:1</button>
+  </div>
+  <button class="btn" id="importBtn">Import</button>
+  <input type="file" id="fileInput" accept=".html,.htm,.css,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
+  <div class="spacer"></div>
+  <button class="btn" id="exportHtmlBtn" disabled>Export HTML</button>
+  <button class="btn primary" id="exportPptxBtn" disabled>Export PPTX</button>
+</header>
+<main>
+  <div id="stage">
+    <div id="empty">Import an HTML slide to convert it into an editable PowerPoint deck — text becomes real text boxes, images and gradients become separate picture/shape layers, all movable and resizable in PowerPoint. A PNG imports as a single picture layer.</div>
+    <div id="canvasWrap"><div id="canvas"></div></div>
+  </div>
+  <aside id="inspector"><div class="empty-note">No slide loaded yet.</div></aside>
+</main>
+
+<div id="importModal">
+  <div class="modal-card">
+    <h3>Import</h3>
+    <p>Paste slide HTML below, or choose an .html file (with optional .css) or a PNG/JPG image.</p>
+    <textarea id="pasteArea" placeholder="Paste slide HTML here..."></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="chooseFilesBtn">Choose file</button>
+      <button class="btn" id="pasteCancelBtn">Cancel</button>
+      <button class="btn primary" id="pasteImportBtn">Convert HTML</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function (global) {
+  'use strict';
+// ===== document.ts =====
+function cloneComponent(component                )                 {
+  return {
+    ...component,
+    style: { ...component.style },
+    ...(component.groupId ? { groupId: component.groupId } : {}),
+    ...(component.groupName ? { groupName: component.groupName } : {}),
+    ...(component.layoutConstraint ? { layoutConstraint: { ...component.layoutConstraint } } : {}),
+  }
+}
+
+function cloneTheme(theme                        )                         {
+  if (!theme) return undefined
+  return {
+    fonts: { ...theme.fonts },
+    colors: { ...theme.colors },
+    spacingScale: { ...theme.spacingScale },
+  }
+}
+
+function cloneCanvas(canvas             )              {
+  return { ...canvas }
+}
+
+function cloneSlide(slide       )        {
+  return {
+    ...slide,
+    elements: Array.isArray(slide.elements) ? slide.elements.map(cloneComponent) : [],
+    ...(slide.background?.fill ? { background: { fill: slide.background.fill } } : {}),
+  }
+}
+
+function buildSlideFromCanvas(input   
+            
+                     
+                              
+ )        {
+  const canvas = cloneCanvas(input.canvas)
+  return {
+    id: input.id,
+    elements: input.components.map(cloneComponent),
+    ...(canvas.background ? { background: { fill: canvas.background } } : {}),
+  }
+}
+
+function getComponentHeight(component                )         {
+  return typeof component.height === 'number' ? component.height : 0
+}
+
+function clampComponentToCanvas(component                , canvas             , x        , y        )                           {
+  const height = getComponentHeight(component)
+  const maxX = Math.max(0, canvas.width - component.width)
+  const maxY = Math.max(0, canvas.height - height)
+  return {
+    x: Math.min(maxX, Math.max(0, Math.round(x))),
+    y: Math.min(maxY, Math.max(0, Math.round(y))),
+  }
+}
+
+function inferPinnedConstraint(component                , canvas             , base                       )                        {
+  const horizontalCenter = component.x + (component.width / 2)
+  const verticalCenter = component.y + (getComponentHeight(component) / 2)
+  const anchorX =
+    horizontalCenter <= canvas.width * 0.33
+      ? 'left'
+      : horizontalCenter >= canvas.width * 0.67
+        ? 'right'
+        : 'center'
+  const anchorY =
+    verticalCenter <= canvas.height * 0.33
+      ? 'top'
+      : verticalCenter >= canvas.height * 0.67
+        ? 'bottom'
+        : 'center'
+  const offsetX =
+    anchorX === 'left'
+      ? component.x
+      : anchorX === 'right'
+        ? canvas.width - (component.x + component.width)
+        : horizontalCenter - (canvas.width / 2)
+  const offsetY =
+    anchorY === 'top'
+      ? component.y
+      : anchorY === 'bottom'
+        ? canvas.height - (component.y + getComponentHeight(component))
+        : verticalCenter - (canvas.height / 2)
+
+  return {
+    ...base,
+    anchorX,
+    anchorY,
+    offsetX: Math.round(offsetX),
+    offsetY: Math.round(offsetY),
+  }
+}
+
+function reflowPinnedComponent(component                , canvas             )                 {
+  const constraint = component.layoutConstraint
+  if (!constraint || constraint.type !== 'pinned') return component
+  const width = component.width
+  const height = getComponentHeight(component)
+  const nextX =
+    constraint.anchorX === 'right'
+      ? canvas.width - width - (constraint.offsetX ?? 0)
+      : constraint.anchorX === 'center'
+        ? Math.round((canvas.width / 2) + (constraint.offsetX ?? 0) - (width / 2))
+        : constraint.offsetX ?? component.x
+  const nextY =
+    constraint.anchorY === 'bottom'
+      ? canvas.height - height - (constraint.offsetY ?? 0)
+      : constraint.anchorY === 'center'
+        ? Math.round((canvas.height / 2) + (constraint.offsetY ?? 0) - (height / 2))
+        : constraint.offsetY ?? component.y
+  const nextCoordinates = clampComponentToCanvas(component, canvas, nextX, nextY)
+  return {
+    ...component,
+    x: nextCoordinates.x,
+    y: nextCoordinates.y,
+  }
+}
+
+function applyLayoutConstraintToComponents(input   
+                     
+                              
+                       
+                                   
+ )                   {
+  const selectedIdSet = new Set(input.selectedIds)
+  const selected = input.components.filter((component) => selectedIdSet.has(component.id) && !component.locked)
+  if (selected.length === 0) return input.components.map(cloneComponent)
+
+  const baseConstraint                        = {
+    ...input.constraint,
+    gap: Math.max(0, Math.round(input.constraint.gap ?? 16)),
+    columns: Math.max(1, Math.round(input.constraint.columns ?? 2)),
+  }
+
+  const nextById = new Map                        ()
+  selected.forEach((component) => {
+    nextById.set(component.id, {
+      ...cloneComponent(component),
+      layoutConstraint:
+        baseConstraint.type === 'pinned'
+          ? inferPinnedConstraint(component, input.canvas, baseConstraint)
+          : { ...baseConstraint },
+    })
+  })
+
+  if (baseConstraint.type === 'stack' || baseConstraint.type === 'row' || baseConstraint.type === 'grid') {
+    const minX = Math.min(...selected.map((component) => component.x))
+    const minY = Math.min(...selected.map((component) => component.y))
+    const maxWidth = Math.max(...selected.map((component) => component.width))
+    const maxHeight = Math.max(...selected.map((component) => getComponentHeight(component)))
+    const gap = baseConstraint.gap ?? 16
+
+    if (baseConstraint.type === 'stack') {
+      let cursorY = minY
+      selected
+        .slice()
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+        .forEach((component) => {
+          const next = nextById.get(component.id)
+          if (!next) return
+          const nextX =
+            baseConstraint.alignment === 'right'
+              ? minX + maxWidth - component.width
+              : baseConstraint.alignment === 'center'
+                ? minX + ((maxWidth - component.width) / 2)
+                : minX
+          const nextCoordinates = clampComponentToCanvas(next, input.canvas, nextX, cursorY)
+          next.x = nextCoordinates.x
+          next.y = nextCoordinates.y
+          cursorY += getComponentHeight(component) + gap
+        })
+    }
+
+    if (baseConstraint.type === 'row') {
+      let cursorX = minX
+      selected
+        .slice()
+        .sort((a, b) => a.x - b.x || a.y - b.y)
+        .forEach((component) => {
+          const next = nextById.get(component.id)
+          if (!next) return
+          const nextY =
+            baseConstraint.alignment === 'right'
+              ? minY + maxHeight - getComponentHeight(component)
+              : baseConstraint.alignment === 'center'
+                ? minY + ((maxHeight - getComponentHeight(component)) / 2)
+                : minY
+          const nextCoordinates = clampComponentToCanvas(next, input.canvas, cursorX, nextY)
+          next.x = nextCoordinates.x
+          next.y = nextCoordinates.y
+          cursorX += component.width + gap
+        })
+    }
+
+    if (baseConstraint.type === 'grid') {
+      const columns = Math.max(1, baseConstraint.columns ?? 2)
+      selected
+        .slice()
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+        .forEach((component, index) => {
+          const next = nextById.get(component.id)
+          if (!next) return
+          const column = index % columns
+          const row = Math.floor(index / columns)
+          const nextX = minX + (column * (maxWidth + gap))
+          const nextY = minY + (row * (maxHeight + gap))
+          const nextCoordinates = clampComponentToCanvas(next, input.canvas, nextX, nextY)
+          next.x = nextCoordinates.x
+          next.y = nextCoordinates.y
+        })
+    }
+  }
+
+  return input.components.map((component) => {
+    const next = nextById.get(component.id)
+    return next ? next : cloneComponent(component)
+  })
+}
+
+function adaptComponentsToResponsiveCanvas(input   
+                             
+                         
+                              
+ )                   {
+  return adaptComponentsToResponsiveCanvasWithWarnings(input).components
+}
+
+function adaptComponentsToResponsiveCanvasWithWarnings(input   
+                             
+                         
+                              
+ )                                                       {
+  const widthRatio = input.nextCanvas.width / Math.max(1, input.previousCanvas.width)
+  const heightRatio = input.nextCanvas.height / Math.max(1, input.previousCanvas.height)
+  const warnings           = []
+  const baseComponents = input.components.map((component) => {
+    const next = cloneComponent(component)
+    if (component.layoutConstraint?.type === 'pinned') {
+      return reflowPinnedComponent(next, input.nextCanvas)
+    }
+    next.x = Math.round(component.x * widthRatio)
+    next.y = Math.round(component.y * heightRatio)
+    next.width = Math.max(1, Math.round(component.width * widthRatio))
+    if (typeof component.height === 'number') {
+      next.height = Math.max(1, Math.round(component.height * heightRatio))
+    }
+    const clamped = clampComponentToCanvas(next, input.nextCanvas, next.x, next.y)
+    const hasConstraint = Boolean(component.layoutConstraint)
+    const movedByClamp = clamped.x !== next.x || clamped.y !== next.y
+    if (!hasConstraint && movedByClamp) {
+      warnings.push(
+        `Manual intervention may be required for unconstrained layer "${component.id}" after responsive reflow.`,
+      )
+    }
+    next.x = clamped.x
+    next.y = clamped.y
+    return next
+  })
+
+  const constraintGroups = new Map                                                              ()
+  for (const component of baseComponents) {
+    const constraint = component.layoutConstraint
+    if (!constraint || constraint.type === 'pinned') continue
+    const bucketKey = component.groupId
+      ? `group:${component.groupId}`
+      : `constraint:${constraint.type}:${constraint.alignment || 'left'}:${constraint.columns || 1}:${constraint.gap || 16}`
+    const existing = constraintGroups.get(bucketKey)
+    if (existing) {
+      existing.ids.push(component.id)
+    } else {
+      constraintGroups.set(bucketKey, { constraint: { ...constraint }, ids: [component.id] })
+    }
+  }
+
+  let adapted = baseComponents
+  for (const group of constraintGroups.values()) {
+    adapted = applyLayoutConstraintToComponents({
+      canvas: input.nextCanvas,
+      components: adapted,
+      selectedIds: group.ids,
+      constraint: group.constraint,
+    })
+  }
+
+  const components = adapted.map((component) => {
+    const clamped = clampComponentToCanvas(component, input.nextCanvas, component.x, component.y)
+    return {
+      ...component,
+      x: clamped.x,
+      y: clamped.y,
+    }
+  })
+  return { components, warnings: Array.from(new Set(warnings)) }
+}
+
+function getSlideDocumentActiveSlide(document               , slideId                )               {
+  if (!Array.isArray(document.deck.slides) || document.deck.slides.length === 0) return null
+  if (slideId) {
+    const matched = document.deck.slides.find((slide) => slide.id === slideId)
+    if (matched) return matched
+  }
+  return document.deck.slides[0] || null
+}
+
+function createSlideDeck(input   
+             
+                     
+                              
+ )            {
+  const canvas = cloneCanvas(input.canvas)
+  const slideId = input.id || 'slide-1'
+  return {
+    id: input.id || 'deck-1',
+    width: canvas.width,
+    height: canvas.height,
+    slides: [buildSlideFromCanvas({ id: slideId, canvas, components: input.components })],
+  }
+}
+
+function createSlideDocument(input   
+             
+                     
+                              
+                     
+                    
+ )                {
+  const deck = createSlideDeck(input)
+  return {
+    version: 1,
+    deck,
+    warnings: Array.isArray(input.warnings) ? [...input.warnings] : [],
+    ...(input.theme ? { theme: cloneTheme(input.theme) } : {}),
+  }
+}
+
+function slideDocumentToImportResult(document               , slideId                )                    {
+  const slide = getSlideDocumentActiveSlide(document, slideId)
+  return {
+    document,
+    canvas: {
+      width: document.deck.width,
+      height: document.deck.height,
+      ...(slide?.background?.fill ? { background: slide.background.fill } : {}),
+    },
+    components: Array.isArray(slide?.elements) ? slide.elements.map(cloneComponent) : [],
+    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
+  }
+}
+
+function ensureSlideDocument(input   
+                                 
+                     
+                              
+                     
+                  
+                    
+ )                {
+  if (input.document) return input.document
+  return createSlideDocument({
+    id: input.slideId,
+    canvas: input.canvas,
+    components: input.components,
+    warnings: input.warnings,
+    theme: input.theme,
+  })
+}
+
+function syncSlideDocument(input   
+                                 
+                     
+                              
+                     
+                  
+                    
+ )                {
+  const version = Number.isFinite(input.document?.version) ? Number(input.document?.version) : 1
+  const activeSlideId = input.slideId || input.document?.deck.slides[0]?.id || 'slide-1'
+  const nextComponents =
+    input.document && (input.document.deck.width !== input.canvas.width || input.document.deck.height !== input.canvas.height)
+      ? input.components.map((component) => reflowPinnedComponent(component, input.canvas))
+      : input.components
+  const currentSlides = Array.isArray(input.document?.deck.slides)
+    ? input.document?.deck.slides.map(cloneSlide)
+    : []
+  const nextSlide = buildSlideFromCanvas({
+    id: activeSlideId,
+    canvas: input.canvas,
+    components: nextComponents,
+  })
+  let replaced = false
+  const nextSlides = currentSlides.map((slide) => {
+    if (slide.id !== activeSlideId) return slide
+    replaced = true
+    return nextSlide
+  })
+  if (!replaced) nextSlides.push(nextSlide)
+  return {
+    version,
+    deck: {
+      id: input.document?.deck.id || activeSlideId || 'deck-1',
+      width: input.canvas.width,
+      height: input.canvas.height,
+      slides: nextSlides,
+    },
+    warnings: Array.isArray(input.warnings) ? [...input.warnings] : [],
+    ...(input.theme || input.document?.theme ? { theme: cloneTheme(input.theme || input.document?.theme) } : {}),
+  }
+}
+
+function appendSlideToDocument(input   
+                         
+                 
+                     
+                              
+ )                {
+  return {
+    version: input.document.version,
+    deck: {
+      ...input.document.deck,
+      slides: [
+        ...input.document.deck.slides.map(cloneSlide),
+        buildSlideFromCanvas({
+          id: input.slideId,
+          canvas: input.canvas,
+          components: input.components,
+        }),
+      ],
+    },
+    warnings: Array.isArray(input.document.warnings) ? [...input.document.warnings] : [],
+    ...(input.document.theme ? { theme: cloneTheme(input.document.theme) } : {}),
+  }
+}
+
+function duplicateSlideInDocument(document               , sourceSlideId        , nextSlideId        )                {
+  const slides = document.deck.slides.map(cloneSlide)
+  const sourceIndex = slides.findIndex((slide) => slide.id === sourceSlideId)
+  if (sourceIndex < 0) return document
+  const sourceSlide = slides[sourceIndex]
+  const duplicate        = {
+    ...sourceSlide,
+    id: nextSlideId,
+    elements: sourceSlide.elements.map((component, index) => ({
+      ...cloneComponent(component),
+      id: `${component.id}-copy-${index + 1}`,
+    })),
+  }
+  slides.splice(sourceIndex + 1, 0, duplicate)
+  return {
+    version: document.version,
+    deck: {
+      ...document.deck,
+      slides,
+    },
+    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
+    ...(document.theme ? { theme: cloneTheme(document.theme) } : {}),
+  }
+}
+
+function deleteSlideFromDocument(document               , slideId        )                {
+  const nextSlides = document.deck.slides.filter((slide) => slide.id !== slideId).map(cloneSlide)
+  return {
+    version: document.version,
+    deck: {
+      ...document.deck,
+      slides: nextSlides.length > 0 ? nextSlides : [buildSlideFromCanvas({
+        id: 'slide-1',
+        canvas: {
+          width: document.deck.width,
+          height: document.deck.height,
+        },
+        components: [],
+      })],
+    },
+    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
+    ...(document.theme ? { theme: cloneTheme(document.theme) } : {}),
+  }
+}
+
+function reorderSlideInDocument(document               , slideId        , direction               )                {
+  const slides = document.deck.slides.map(cloneSlide)
+  const index = slides.findIndex((slide) => slide.id === slideId)
+  if (index < 0) return document
+  const targetIndex = direction === 'up' ? index - 1 : index + 1
+  if (targetIndex < 0 || targetIndex >= slides.length) return document
+  const [moved] = slides.splice(index, 1)
+  slides.splice(targetIndex, 0, moved)
+  return {
+    version: document.version,
+    deck: {
+      ...document.deck,
+      slides,
+    },
+    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
+    ...(document.theme ? { theme: cloneTheme(document.theme) } : {}),
+  }
+}
+
+function readSlideDocumentFromMetadata(metadata                                            )                       {
+  const raw = metadata && typeof metadata === 'object' ? (metadata                           ).slide_document : null
+  if (!raw || typeof raw !== 'object') return null
+  const candidate = raw                 
+  if (!candidate.deck || !Array.isArray(candidate.deck.slides)) return null
+  return candidate
+}
+
+function slideRecordToImportResult(slide             )                    {
+  const persisted = readSlideDocumentFromMetadata(slide.metadata)
+  const document = persisted || createSlideDocument({
+    id: slide.id,
+    canvas: slide.canvas,
+    components: slide.components,
+    warnings: Array.isArray(slide.metadata?.warnings) ? slide.metadata.warnings             : [],
+  })
+  const activeDocumentSlideId = typeof slide.metadata?.active_document_slide_id === 'string'
+    ? slide.metadata.active_document_slide_id
+    : null
+  return slideDocumentToImportResult(document, activeDocumentSlideId)
+}
+
+// ===== import-validation.ts =====
+const MAX_IMPORT_FILE_SIZE_BYTES = 50_000_000
+
+                                    
+                       
+                    
+                 
+                    
+                        
+                     
+
+                                     
+                              
+                 
+ 
+
+function validateImportFile(file      )                            {
+  const name = file.name.toLowerCase()
+  const type = file.type.toLowerCase()
+  const looksHtml = name.endsWith('.html') || name.endsWith('.htm') || type.includes('text/html')
+
+  if (!looksHtml) {
+    return {
+      code: 'invalid_file_type',
+      message: 'Only .html and .htm files are supported for slide import.',
+    }
+  }
+
+  if (file.size > MAX_IMPORT_FILE_SIZE_BYTES) {
+    const maxSizeMb = Math.floor(MAX_IMPORT_FILE_SIZE_BYTES / 1_000_000)
+    return {
+      code: 'file_too_large',
+      message: `Import file is too large. Maximum supported size is ${maxSizeMb} MB.`,
+    }
+  }
+
+  return null
+}
+
+function validateHtmlImportInput(html        )                            {
+  const trimmed = html.trim()
+  if (!trimmed) {
+    return {
+      code: 'empty_input',
+      message: 'HTML input is empty. Paste HTML or choose a file before parsing.',
+    }
+  }
+
+  if (!/<[a-z][^>]*>/i.test(trimmed)) {
+    return {
+      code: 'invalid_markup',
+      message: 'Input does not appear to contain valid HTML markup.',
+    }
+  }
+
+  return null
+}
+
+function validatePastedHtml(html        )                            {
+  return validateHtmlImportInput(html)
+}
+
+function validateParsedResult(result                   )                            {
+  if (result.components.length === 0) {
+    return {
+      code: 'unsupported_layout',
+      message: 'No supported slide components were detected. Ensure elements are absolutely positioned with left/top coordinates.',
+    }
+  }
+  return null
+}
+
+function classifyImportError(error         )                     {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return {
+      code: 'generic_failure',
+      message: 'Import was canceled before parse completion.',
+    }
+  }
+
+  const raw = error instanceof Error ? error.message : String(error)
+  const message = raw.toLowerCase()
+
+  if (message.includes('markup') || message.includes('html')) {
+    return {
+      code: 'invalid_markup',
+      message: raw,
+    }
+  }
+
+  if (message.includes('unsupported') || message.includes('slide root') || message.includes('positioned')) {
+    return {
+      code: 'unsupported_layout',
+      message: raw,
+    }
+  }
+
+  return {
+    code: 'generic_failure',
+    message: raw || 'Unexpected parser error.',
+  }
+}
+
+// ===== html-import.ts =====
+const DEFAULT_CANVAS_WIDTH = 1920
+const DEFAULT_CANVAS_HEIGHT = 1080
+const CANVAS_TARGET_ASPECT_RATIO = DEFAULT_CANVAS_WIDTH / DEFAULT_CANVAS_HEIGHT
+const CANVAS_AUTO_SCALE_RATIO_THRESHOLD = 1.4
+const MIN_FLOW_NODE_SIZE = 12
+const IMPORT_AUTO_CANVAS_SCALE_MAX = 2.5
+const IMPORT_ROOT_MARKER_ATTR = 'data-import-root-id'
+const IMPORT_ROOT_MARKER_VALUE = 'import-root'
+const IMPORT_ROOT_NODE_ID = 'import-node-root'
+const FLOW_TEXT_TAGS = new Set([
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'p',
+  'li',
+  'blockquote',
+  'figcaption',
+  'button',
+  'label',
+  'a',
+  'dt',
+  'dd',
+])
+const FLOW_MEDIA_TAGS = new Set(['img', 'picture', 'svg', 'canvas', 'video'])
+const CSS_IMPORT_MAX_RECURSION_DEPTH = 3
+const IMPORT_STYLE_PROPERTIES = [
+  'color',
+  'background-color',
+  'background-image',
+  'background',
+  'font-size',
+  'font-weight',
+  'font-style',
+  'font-family',
+  'line-height',
+  'text-align',
+  'letter-spacing',
+  'text-transform',
+  'display',
+  'align-items',
+  'justify-content',
+  'gap',
+  'padding-top',
+  'padding-right',
+  'padding-bottom',
+  'padding-left',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+  'border-color',
+  'border-width',
+  'border-style',
+  'border-radius',
+  'box-shadow',
+  'margin-left',
+  'margin-top',
+]         
+
+                        
+             
+               
+              
+ 
+
+                            
+            
+            
+                
+                 
+ 
+
+                         
+              
+              
+                  
+                   
+               
+                
+ 
+
+                          
+                          
+                                     
+                     
+ 
+
+function normalizeImportedHtmlMarkup(html        , warnings          )         {
+  const source = html.trim()
+  if (!source) return html
+
+  const htmlOpenRegex = /<html\b[^>]*>/gi
+  const htmlOpenMatches = Array.from(source.matchAll(htmlOpenRegex))
+  if (htmlOpenMatches.length <= 1) return source
+
+  const firstHtmlIndex = htmlOpenMatches[0].index ?? 0
+  const closeRegex = /<\/html>/gi
+  closeRegex.lastIndex = firstHtmlIndex
+  const firstCloseMatch = closeRegex.exec(source)
+
+  const doctypeMatch = source.match(/<!doctype[^>]*>/i)
+  const hasLeadingDoctype = !!doctypeMatch && (doctypeMatch.index ?? -1) < firstHtmlIndex
+  const prefix = hasLeadingDoctype ? `${doctypeMatch?.[0] || ''}\n` : ''
+  const sliced = firstCloseMatch
+    ? source.slice(firstHtmlIndex, closeRegex.lastIndex)
+    : source.slice(firstHtmlIndex)
+
+  warnings.push(`Detected ${htmlOpenMatches.length} HTML root tags; imported the first document block only.`)
+  return `${prefix}${sliced}`.trim()
+}
+
+function createSettlingTimeout(timeoutMs        )                {
+  return new Promise      ((resolve, reject) => {
+    window.setTimeout(() => {
+      reject(new Error(`Timeout waiting for import render settle after ${timeoutMs}ms.`))
+    }, timeoutMs)
+  })
+}
+
+async function waitForImageLoad(image                  )                {
+  if (image.complete) return
+  await new Promise((resolve) => {
+    const done = () => {
+      image.removeEventListener('load', done)
+      image.removeEventListener('error', done)
+      resolve(undefined)
+    }
+    image.addEventListener('load', done, { once: true })
+    image.addEventListener('error', done, { once: true })
+  })
+}
+
+async function settleRenderSnapshot(doc          )                {
+  if (!doc) return
+  const settleWait = new Promise      ((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+
+  const pending                          = [settleWait]
+  const documentFonts = (doc                                      ).fonts
+  if (documentFonts?.ready) {
+    pending.push(documentFonts.ready)
+  }
+
+  const images = Array.from(doc.querySelectorAll('img'))
+  for (const image of images) {
+    pending.push(waitForImageLoad(image))
+  }
+
+  try {
+    await Promise.race([
+      Promise.all(pending),
+      createSettlingTimeout(1500),
+    ])
+  } catch {
+    // Best-effort render settling for import fidelity.
+  }
+}
+
+function makeSafeResolvedUrl(rawUrl        , baseUrl        )                {
+  try {
+    return new URL(rawUrl, baseUrl).toString()
+  } catch {
+    return null
+  }
+}
+
+function parseStylesheetHref(styleSheet                 , baseUrl        )                {
+  const href = styleSheet.getAttribute('href')
+  if (!href) return null
+  const resolved = makeSafeResolvedUrl(href, baseUrl)
+  if (!resolved) return null
+  if (resolved.startsWith('data:')) return null
+  return resolved
+}
+
+                             
+                 
+                               
+               
+                   
+ 
+
+                           
+                 
+                       
+                         
+ 
+
+async function fetchWithTimeout(url        , timeoutMs = 1500)                         {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => {
+    controller.abort()
+  }, timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      mode: 'cors',
+      credentials: 'omit',
+      redirect: 'follow',
+      cache: 'no-cache',
+    })
+
+    if (!response.ok) return null
+    return await response.text()
+  } catch {
+    return null
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
+function stripCssComments(cssText        )         {
+  return cssText.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+function stripWrappingQuotes(value        )         {
+  const trimmed = value.trim()
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1)
+  }
+  return trimmed
+}
+
+function getCssImportUrl(rawUrl        )                {
+  const trimmed = rawUrl.trim()
+  const urlMatch = trimmed.match(/^url\((.*)\)$/i)
+  if (urlMatch) {
+    return stripWrappingQuotes(urlMatch[1] || '')
+  }
+  if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
+    return stripWrappingQuotes(trimmed)
+  }
+  return null
+}
+
+function parseInlineStyleImport(rawImportStatement        )                {
+  const raw = rawImportStatement.trim().replace(/^@import\s+/i, '')
+  const statement = raw.endsWith(';') ? raw.slice(0, -1).trim() : raw
+  const tokens = statement.split(/\s+/)
+  if (tokens.length === 0) return null
+
+  const candidateUrl = getCssImportUrl(tokens[0] || '')
+  if (!candidateUrl) return null
+  return candidateUrl
+}
+
+async function parseCssImportUrls(
+  cssText        ,
+  baseUrl        ,
+  warnings          ,
+  recursionDepth = 0,
+)                           {
+  if (recursionDepth > CSS_IMPORT_MAX_RECURSION_DEPTH) {
+    return { cssText, importedCount: 0, unresolvedCount: 0 }
+  }
+
+  const stripped = stripCssComments(cssText)
+  const importRegex = /@import[^;]+;/gi
+  let match                        
+  const chunks           = []
+  let lastIndex = 0
+  let importedCount = 0
+  let unresolvedCount = 0
+
+  while ((match = importRegex.exec(stripped)) !== null) {
+    const fullMatch = match[0]
+    const matchStart = match.index
+    const matchEnd = importRegex.lastIndex
+
+    chunks.push(cssText.slice(lastIndex, matchStart))
+
+    const importUrl = parseInlineStyleImport(fullMatch)
+    if (!importUrl) {
+      warnings.push('Ignored unsupported CSS @import syntax; unsupported import form was skipped.')
+      unresolvedCount += 1
+      chunks.push('\n')
+      lastIndex = matchEnd
+      continue
+    }
+
+    const resolvedImportUrl = makeSafeResolvedUrl(importUrl, baseUrl)
+    if (!resolvedImportUrl || resolvedImportUrl.startsWith('data:')) {
+      warnings.push('Could not resolve CSS @import URL "' + importUrl + '"; import skipped.')
+      unresolvedCount += 1
+      chunks.push('\n')
+      lastIndex = matchEnd
+      continue
+    }
+
+    const nestedCssText = await fetchWithTimeout(resolvedImportUrl)
+    if (!nestedCssText) {
+      warnings.push('Could not fetch CSS @import "' + resolvedImportUrl + '".')
+      unresolvedCount += 1
+      chunks.push('\n')
+      lastIndex = matchEnd
+      continue
+    }
+
+    const nested = await parseCssImportUrls(nestedCssText, resolvedImportUrl, warnings, recursionDepth + 1)
+    importedCount += 1 + nested.importedCount
+    unresolvedCount += nested.unresolvedCount
+    chunks.push('\n')
+    chunks.push(nested.cssText)
+    chunks.push('\n')
+    lastIndex = matchEnd
+  }
+
+  chunks.push(cssText.slice(lastIndex))
+
+  return {
+    cssText: chunks.join(''),
+    importedCount,
+    unresolvedCount,
+  }
+}
+
+async function inlineExternalStylesheets(doc          , warnings          )                               {
+  const styleNodes = Array.from(
+    doc.querySelectorAll('style,link[rel~="stylesheet"][href]'),
+  )                                             
+  if (styleNodes.length === 0) return []
+
+  warnings.push(
+    'Detected ' +
+    styleNodes.length +
+    ' style definition block' +
+    (styleNodes.length === 1 ? '' : 's') +
+    '; attempting to inline stylesheet resources for fidelity.',
+  )
+
+  const baseUrl = doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href
+  const stylesheetNodes = styleNodes.filter(
+    (styleNode)                               => styleNode.tagName.toLowerCase() === 'link',
+  )
+  const linkByNode = new Map                                         ()
+  for (const stylesheet of stylesheetNodes) {
+    const href = parseStylesheetHref(stylesheet, baseUrl)
+    linkByNode.set(stylesheet, href ? fetchWithTimeout(href).then((cssText) => cssText) : Promise.resolve(null))
+  }
+  const fetched = await Promise.allSettled(Array.from(linkByNode.values()))
+
+  const inlinedStyles                      = []
+  let linkResultCursor = 0
+  let unresolvedCount = 0
+
+  for (let index = 0; index < styleNodes.length; index += 1) {
+    const node = styleNodes[index]
+    if (node.tagName.toLowerCase() === 'style') {
+      const cssText = node.textContent || ''
+      const { cssText: inlinedText, importedCount, unresolvedCount: inlinedUnresolved } = await parseCssImportUrls(
+        cssText,
+        doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href,
+        warnings,
+      )
+      if (inlinedText.trim()) {
+        inlinedStyles.push({
+          cssText: inlinedText,
+          source: 'inline',
+          order: index,
+        })
+      }
+      if (importedCount > 0) {
+        warnings.push(
+          'Inlined ' +
+            importedCount +
+            ' @import stylesheet' +
+            (importedCount === 1 ? '' : 's') +
+            ' from inline style.',
+        )
+      }
+      if (inlinedUnresolved > 0) {
+        warnings.push(
+          'Could not inline ' +
+            inlinedUnresolved +
+            ' inline @import stylesheet' +
+            (inlinedUnresolved === 1 ? '' : 's') +
+            '; source fallback may differ from original.',
+        )
+        unresolvedCount += inlinedUnresolved
+      }
+      continue
+    }
+
+    const result = fetched[linkResultCursor]
+    linkResultCursor += 1
+    if (result?.status === 'fulfilled' && result.value) {
+      const linkedBase = node.getAttribute('href')
+        ? makeSafeResolvedUrl(node.getAttribute('href') || '', doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href)
+        || doc.baseURI
+        || window.location.href
+        : doc.baseURI || window.location.href
+      const { cssText: inlinedText, importedCount, unresolvedCount: inlinedUnresolved } = await parseCssImportUrls(
+        result.value,
+        linkedBase,
+        warnings,
+      )
+      if (importedCount > 0) {
+        warnings.push(
+          'Inlined ' +
+            importedCount +
+            ' nested @import stylesheet' +
+            (importedCount === 1 ? '' : 's') +
+            ' from linked stylesheet.',
+        )
+      }
+      inlinedStyles.push({
+        cssText: inlinedText,
+        source: 'external',
+        order: index,
+        linkHref: node.getAttribute('href') || undefined,
+      })
+      if (inlinedUnresolved > 0) {
+        warnings.push(
+          'Could not inline ' +
+            inlinedUnresolved +
+            ' nested @import stylesheet' +
+            (inlinedUnresolved === 1 ? '' : 's') +
+            '; nested fallback may differ from source.',
+        )
+        unresolvedCount += inlinedUnresolved
+      }
+      continue
+    }
+
+    unresolvedCount += 1
+  }
+
+  if (unresolvedCount > 0) {
+    warnings.push(
+      'Could not inline ' +
+      unresolvedCount +
+      ' linked stylesheet' +
+      (unresolvedCount === 1 ? '' : 's') +
+      '; remaining fallback styles may differ from source.',
+    )
+  }
+
+  return inlinedStyles.sort((a, b) => a.order - b.order)
+}
+
+function parseInlineStyle(styleValue        )                         {
+  const styleMap                         = {}
+  for (const segment of styleValue.split(';')) {
+    const idx = segment.indexOf(':')
+    if (idx <= 0) continue
+    const key = segment.slice(0, idx).trim().toLowerCase()
+    const value = segment.slice(idx + 1).trim()
+    if (key) styleMap[key] = value
+  }
+  return styleMap
+}
+
+function parseRuleDeclarations(rawDeclarations        )                         {
+  const declarations                         = {}
+  const declarationList = rawDeclarations.split(';')
+  for (const declaration of declarationList) {
+    const segment = declaration.trim()
+    if (!segment) continue
+    const index = segment.indexOf(':')
+    if (index <= 0) continue
+    const key = segment.slice(0, index).trim().toLowerCase()
+    const value = segment.slice(index + 1).trim()
+    if (key) declarations[key] = value
+  }
+  return declarations
+}
+
+                                 
+                
+                            
+                                  
+                   
+               
+ 
+
+function parsePseudoLayerDescriptors(styleText        , root             )                          {
+  const descriptors                          = []
+  const ruleRegex = /([^{}]+)\{([^{}]*)\}/g
+  let match                        
+  let order = 0
+
+  while ((match = ruleRegex.exec(styleText)) !== null) {
+    const selectorList = match[1]?.trim() || ''
+    const declarationText = match[2] || ''
+    const styleMap = parseRuleDeclarations(declarationText)
+    if (Object.keys(styleMap).length === 0) {
+      order += 1
+      continue
+    }
+
+    const selectors = selectorList.split(',').map((selector) => selector.trim()).filter(Boolean)
+    for (const selector of selectors) {
+      const pseudoMatch = selector.match(/^(.+?)(::before|::after|:before|:after)\s*$/i)
+      if (!pseudoMatch) continue
+
+      const pseudo = pseudoMatch[2]?.toLowerCase().includes('before') ? 'before' : 'after'
+      const hostSelector = pseudoMatch[1]?.trim()
+      if (!hostSelector) continue
+
+      let hostNodes                = []
+      try {
+        hostNodes = Array.from(root.querySelectorAll(hostSelector)                           )
+        if (root.matches(hostSelector)) {
+          hostNodes = [root, ...hostNodes]
+        }
+      } catch {
+        continue
+      }
+
+      for (const hostNode of Array.from(hostNodes)) {
+        const hostId = hostNode.getAttribute('data-import-node-id')
+        if (!hostId) continue
+        descriptors.push({
+          hostId,
+          pseudo,
+          hostLabel: getNodeLabel(hostNode),
+          styleMap,
+          order,
+        })
+      }
+    }
+
+    order += 1
+  }
+
+  return descriptors
+}
+
+function buildPseudoContent(styleMap                        , pseudoNodeLabel        , warnings          )         {
+  const rawContent = styleMap.content || ''
+  if (!rawContent || rawContent.toLowerCase() === 'none') return ''
+
+  const isUrlImage = rawContent.startsWith('url(') && rawContent.endsWith(')')
+  if (isUrlImage) {
+    const parsedUrl = getCssImportUrl(rawContent)
+    if (!parsedUrl) {
+      warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content URL "' + rawContent + '" could not be parsed; ignored.')
+      return ''
+    }
+    warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content URL converted to image fallback.')
+    return `<img alt="${pseudoNodeLabel}" src="${parsedUrl}" />`
+  }
+
+  return stripWrappingQuotes(rawContent)
+}
+
+function parsePseudoDimension(styleMap                        , key                    , nodeLabel        , warnings          )                     {
+  return parseStylePx(styleMap, key, nodeLabel, warnings)
+}
+
+function computePseudoOffset(
+  styleMap                        ,
+  axis           ,
+  hostRect                  ,
+  nodeLabel        ,
+  warnings          ,
+)         {
+  const key = axis === 'x' ? 'left' : 'top'
+  const axisSize = axis === 'x' ? (hostRect.width || 0) : (hostRect.height || 0)
+  const parsed = parseStylePositionPx(styleMap, key, nodeLabel, warnings, axisSize)
+  if (typeof parsed === 'number' && Number.isFinite(parsed)) return parsed
+  return 0
+}
+
+function shouldImportPseudoLayer(styleMap                        , width                    , height                    )          {
+  if (styleMap.content && styleMap.content.toLowerCase() !== 'none') return true
+  if (parseRuleValueExists(styleMap, 'background') || parseRuleValueExists(styleMap, 'background-color') || parseRuleValueExists(styleMap, 'background-image')) return true
+  if (parseRuleValueExists(styleMap, 'border') || parseRuleValueExists(styleMap, 'border-color') || parseRuleValueExists(styleMap, 'box-shadow')) return true
+  return typeof width === 'number' || typeof height === 'number'
+}
+
+function parseRuleValueExists(styleMap                        , key        )          {
+  return typeof styleMap[key] === 'string' && styleMap[key].trim().length > 0
+}
+
+function resolveFontFamily(rawFamily        , warnings          , nodeLabel        )                     {
+  if (!rawFamily) return undefined
+  const hasGeneric = rawFamily
+    .split(',')
+    .map((family) => stripWrappingQuotes(family.trim()))
+    .filter(Boolean)
+    .map((family) => family.toLowerCase())
+    .some((family) => ['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy'].includes(family))
+  if (hasGeneric) return rawFamily
+
+  const fallback = /\b(serif|arial|times|georgia|garamond|didot|cambria|cochin|palatino|lucida)\b/i.test(rawFamily)
+    ? 'serif'
+    : 'sans-serif'
+  const sanitized = rawFamily.trim() ? `${rawFamily}, ${fallback}` : fallback
+  warnings.push('Node "' + nodeLabel + '" font-family "' + rawFamily + '" normalized with fallback "' + fallback + '".')
+  return sanitized
+}
+
+function resolveSvgImageFallback(node             , nodeLabel        , warnings          )         {
+  const rawMarkup = node.outerHTML || ''
+  if (!rawMarkup.trim()) return ''
+  const compactMarkup = rawMarkup
+    .replace(/\s{2,}/g, ' ')
+    .replace(/>\s+</g, '><')
+    .trim()
+  const encodedMarkup = encodeURIComponent(compactMarkup)
+  warnings.push('Node "' + nodeLabel + '" imported as inline SVG image fallback.')
+  return `<img alt="${nodeLabel}" src="data:image/svg+xml;utf8,${encodedMarkup}" />`
+}
+
+function parseLength(value                           )                           {
+  if (!value) return undefined
+  const raw = value.trim().toLowerCase()
+  if (!raw) return undefined
+
+  const match = raw.match(/^(-?\d*\.?\d+)([a-z%]*)$/)
+  if (!match) return undefined
+
+  const parsed = Number.parseFloat(match[1])
+  if (!Number.isFinite(parsed)) return undefined
+
+  return {
+    raw,
+    value: parsed,
+    unit: match[2] || '',
+  }
+}
+
+function isPxLike(length              )          {
+  return length.value === 0 || length.unit === '' || length.unit === 'px'
+}
+
+function parsePositivePx(rawValue                           )                     {
+  const parsed = parseLength(rawValue)
+  if (!parsed) return undefined
+  if (!isPxLike(parsed)) return undefined
+  if (parsed.value <= 0) return undefined
+  return parsed.value
+}
+
+function estimateNodeAreaFromDeclaredSize(node             )         {
+  const styleMap = parseInlineStyle(node.getAttribute('style') || '')
+  const width = parsePositivePx(styleMap.width ?? node.getAttribute('width'))
+  const height = parsePositivePx(styleMap.height ?? node.getAttribute('height'))
+  if (!width || !height) return 0
+  return width * height
+}
+
+function sanitizeNodeInPlace(root             )       {
+  root.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(el => el.remove())
+
+  const allNodes = [root, ...Array.from(root.querySelectorAll             ('*'))]
+  for (const element of allNodes) {
+    for (const attr of Array.from(element.attributes)) {
+      const attrName = attr.name.toLowerCase()
+      const attrValue = attr.value.trim().toLowerCase()
+      if (attrName.startsWith('on')) {
+        element.removeAttribute(attr.name)
+        continue
+      }
+      if ((attrName === 'href' || attrName === 'src') && attrValue.startsWith('javascript:')) {
+        element.removeAttribute(attr.name)
+      }
+    }
+  }
+}
+
+function readComputedStyleSafe(node             )                             {
+  const styleWindow = node.ownerDocument?.defaultView || (typeof window !== 'undefined' ? window : null)
+  if (!styleWindow || typeof styleWindow.getComputedStyle !== 'function') return null
+  try {
+    return styleWindow.getComputedStyle(node)
+  } catch {
+    return null
+  }
+}
+
+function normalizeColor(value                    )                     {
+  if (!value) return undefined
+  const normalized = value.trim()
+  if (!normalized) return undefined
+  if (normalized === 'transparent') return undefined
+  if (normalized === 'rgba(0, 0, 0, 0)' || normalized === 'rgba(0,0,0,0)') return undefined
+  return normalized
+}
+
+function normalizeBackgroundFill(value                    )                     {
+  if (!value) return undefined
+  const normalized = value.trim()
+  if (!normalized) return undefined
+  const lowered = normalized.toLowerCase()
+  if (
+    lowered === 'none' ||
+    lowered === 'transparent' ||
+    lowered === 'rgba(0, 0, 0, 0)' ||
+    lowered === 'rgba(0,0,0,0)' ||
+    /^rgba?\(0,\s*0,\s*0(?:,\s*0)?\)\s+none\b/.test(lowered)
+  ) {
+    return undefined
+  }
+  if (/url\(\s*javascript:/i.test(lowered)) return undefined
+  return normalized
+}
+
+function normalizeBackgroundImage(value                    )                     {
+  if (!value) return undefined
+  const normalized = value.trim()
+  if (!normalized || normalized.toLowerCase() === 'none') return undefined
+  if (/url\(\s*javascript:/i.test(normalized)) return undefined
+  return normalized
+}
+
+function resolveComputedBackground(
+  computedStyle                            ,
+  styleMap                        ,
+)                                                        {
+  const backgroundImage = normalizeBackgroundImage(computedStyle?.backgroundImage || styleMap['background-image'])
+  const backgroundColor = normalizeColor(computedStyle?.backgroundColor || styleMap['background-color'])
+  const backgroundFill = normalizeBackgroundFill(computedStyle?.background || styleMap.background)
+
+  if (backgroundImage) {
+    const fill = backgroundColor ? `${backgroundImage}, ${backgroundColor}` : backgroundImage
+    return { backgroundFill: fill, backgroundColor }
+  }
+
+  return {
+    backgroundFill,
+    backgroundColor,
+  }
+}
+
+function hasRenderedBorder(style                     )          {
+  const widths = [
+    style.borderTopWidth,
+    style.borderRightWidth,
+    style.borderBottomWidth,
+    style.borderLeftWidth,
+  ]
+  const styles = [
+    style.borderTopStyle,
+    style.borderRightStyle,
+    style.borderBottomStyle,
+    style.borderLeftStyle,
+  ]
+
+  for (let index = 0; index < widths.length; index += 1) {
+    const width = parseLength(widths[index])
+    const hasWidth = !!width && isPxLike(width) && width.value > 0
+    const borderStyle = (styles[index] || '').trim().toLowerCase()
+    if (hasWidth && borderStyle && borderStyle !== 'none' && borderStyle !== 'hidden') return true
+  }
+
+  return false
+}
+
+function serializeInlineImportStyle(computedStyle                            )         {
+  if (!computedStyle) return ''
+  const entries           = []
+  for (const property of IMPORT_STYLE_PROPERTIES) {
+    const value = computedStyle.getPropertyValue(property).trim()
+    if (!value) continue
+    if (property === 'background-color' && !normalizeColor(value)) continue
+    if (property === 'border-top' || property === 'border-right' || property === 'border-bottom' || property === 'border-left') {
+      if (value === '0px none rgb(0, 0, 0)' || value === 'none') continue
+    }
+    entries.push(`${property}: ${value}`)
+  }
+  return entries.join('; ')
+}
+
+function buildSanitizedContentNode(node             )              {
+  const clone = node.cloneNode(true)               
+  const sourceNodes = [node, ...Array.from(node.querySelectorAll             ('*'))]
+  const cloneNodes = [clone, ...Array.from(clone.querySelectorAll             ('*'))]
+  const count = Math.min(sourceNodes.length, cloneNodes.length)
+
+  for (let index = 0; index < count; index += 1) {
+    const inlineStyle = serializeInlineImportStyle(readComputedStyleSafe(sourceNodes[index]))
+    if (inlineStyle) cloneNodes[index].setAttribute('style', inlineStyle)
+  }
+
+  sanitizeNodeInPlace(clone)
+  return clone
+}
+
+function inferType(node             )                     {
+  const className = (node.className || '').toString().toLowerCase()
+  const text = (node.textContent || '').trim().toLowerCase()
+  const tag = node.tagName.toLowerCase()
+  const alt = (node.getAttribute('alt') || '').toLowerCase()
+
+  if (tag === 'svg') return 'logo'
+  if (tag === 'img' && (className.includes('logo') || alt.includes('logo'))) return 'logo'
+  if (tag === 'h1' || tag === 'h2' || className.includes('heading') || className.includes('title')) return 'heading'
+  if (tag === 'h3' || tag === 'h4' || className.includes('subheading') || className.includes('subtitle')) return 'subheading'
+  if (className.includes('tagline') || className.includes('tag-line')) return 'tag-line'
+  if (className.includes('stat') || className.includes('metric')) return 'stat'
+  if (className.includes('card') || className.includes('artifact') || /\bart\b/.test(className)) return 'card'
+  if (className.includes('row')) return 'row'
+  if (className.includes('panel') || className.includes('container')) return 'panel'
+  if (text.length <= 32 && /\d/.test(text) && className.includes('kpi')) return 'stat'
+  return 'text'
+}
+
+function parseStylePx(
+  styleMap                        ,
+  key        ,
+  nodeLabel        ,
+  warnings          ,
+)                     {
+  const raw = styleMap[key]
+  if (raw === undefined) return undefined
+  if (!raw.trim() || raw.trim().toLowerCase() === 'auto') return undefined
+
+  const parsed = parseLength(raw)
+  if (!parsed) {
+    warnings.push('Node "' + nodeLabel + '" has non-numeric ' + key + ' value "' + raw + '"; ignored.')
+    return undefined
+  }
+
+  if (!isPxLike(parsed)) {
+    warnings.push('Node "' + nodeLabel + '" uses unsupported ' + key + ' unit "' + parsed.unit + '"; ignored.')
+    return undefined
+  }
+
+  return parsed.value
+}
+
+function parseStylePositionPx(
+  styleMap                        ,
+  key                ,
+  nodeLabel        ,
+  warnings          ,
+  axisSize        ,
+)                     {
+  const raw = styleMap[key]
+  if (raw === undefined) return undefined
+  if (!raw.trim() || raw.trim().toLowerCase() === 'auto') return undefined
+
+  const parsed = parseLength(raw)
+  if (!parsed) {
+    warnings.push('Node "' + nodeLabel + '" has non-numeric ' + key + ' value "' + raw + '"; ignored.')
+    return undefined
+  }
+
+  if (isPxLike(parsed)) return parsed.value
+
+  if (parsed.unit === '%') {
+    warnings.push('Node "' + nodeLabel + '" uses unsupported ' + key + ' unit "%"; ignored.')
+    return axisSize > 0 ? (axisSize * parsed.value) / 100 : undefined
+  }
+
+  warnings.push('Node "' + nodeLabel + '" uses unsupported ' + key + ' unit "' + parsed.unit + '"; ignored.')
+  return undefined
+}
+
+function parseStyleOffsetPx(
+  styleMap                        ,
+  key                                               ,
+  nodeLabel        ,
+  warnings          ,
+  axisSize        ,
+)                     {
+  if (key === 'left' || key === 'top') {
+    return parseStylePositionPx(styleMap, key, nodeLabel, warnings, axisSize)
+  }
+
+  const raw = styleMap[key]
+  if (raw === undefined) return undefined
+  if (!raw.trim() || raw.trim().toLowerCase() === 'auto') return undefined
+
+  const parsed = parseLength(raw)
+  if (!parsed) {
+    warnings.push('Node "' + nodeLabel + '" has non-numeric ' + key + ' value "' + raw + '"; ignored.')
+    return undefined
+  }
+
+  if (isPxLike(parsed)) return parsed.value
+
+  if (parsed.unit === '%') {
+    warnings.push('Node "' + nodeLabel + '" uses unsupported ' + key + ' unit "%"; approximated from canvas axis.')
+    return axisSize > 0 ? (axisSize * parsed.value) / 100 : undefined
+  }
+
+  warnings.push('Node "' + nodeLabel + '" uses unsupported ' + key + ' unit "' + parsed.unit + '"; ignored.')
+  return undefined
+}
+
+function parseComputedPositionPx(
+  rawValue                    ,
+  key                ,
+  nodeLabel        ,
+  warnings          ,
+  axisSize        ,
+)                     {
+  if (!rawValue) return undefined
+  const normalized = rawValue.trim().toLowerCase()
+  if (!normalized || normalized === 'auto') return undefined
+
+  const parsed = parseLength(normalized)
+  if (!parsed) {
+    warnings.push('Node "' + nodeLabel + '" has non-numeric computed ' + key + ' value "' + rawValue + '"; ignored.')
+    return undefined
+  }
+
+  if (isPxLike(parsed)) return parsed.value
+
+  if (parsed.unit === '%') {
+    warnings.push('Node "' + nodeLabel + '" uses unsupported computed ' + key + ' unit "%"; ignored.')
+    return axisSize > 0 ? (axisSize * parsed.value) / 100 : undefined
+  }
+
+  warnings.push('Node "' + nodeLabel + '" uses unsupported computed ' + key + ' unit "' + parsed.unit + '"; ignored.')
+  return undefined
+}
+
+function parseAttrPx(
+  rawValue               ,
+  attrName        ,
+  nodeLabel        ,
+  warnings          ,
+)                     {
+  const parsed = parseLength(rawValue)
+  if (!parsed) return undefined
+
+  if (!isPxLike(parsed)) {
+    warnings.push('Node "' + nodeLabel + '" uses unsupported ' + attrName + ' unit "' + parsed.unit + '"; ignored.')
+    return undefined
+  }
+
+  return parsed.value
+}
+
+function parseCanvasPx(
+  rawValue                    ,
+  axisLabel                    ,
+  warnings          ,
+)                     {
+  const parsed = parseLength(rawValue)
+  if (!parsed) return undefined
+
+  if (!isPxLike(parsed)) {
+    warnings.push('Slide root uses unsupported canvas ' + axisLabel + ' unit "' + parsed.unit + '"; defaulted to ' + (axisLabel === 'width' ? DEFAULT_CANVAS_WIDTH : DEFAULT_CANVAS_HEIGHT) + '.')
+    return undefined
+  }
+
+  if (parsed.value <= 0) {
+    warnings.push('Slide root has non-positive canvas ' + axisLabel + '; defaulted to ' + (axisLabel === 'width' ? DEFAULT_CANVAS_WIDTH : DEFAULT_CANVAS_HEIGHT) + '.')
+    return undefined
+  }
+
+  return parsed.value
+}
+
+function canonicalCanvasValue(rectValue                    , fallback        , warnings          , axis                    , fileLabel        )         {
+  if (typeof rectValue !== 'number' || !Number.isFinite(rectValue) || rectValue <= 0) {
+    warnings.push('Could not resolve ' + fileLabel + ' canvas ' + axis + '; defaulted to ' + fallback + '.')
+    return fallback
+  }
+  return rectValue
+}
+
+function parseTransformOffsets(
+  transformRaw                    ,
+  nodeLabel        ,
+  warnings          ,
+)                           {
+  if (!transformRaw || transformRaw === 'none') return { x: 0, y: 0 }
+
+  const normalized = transformRaw.trim().toLowerCase()
+
+  const unsupportedTransformTokens = ['matrix(', 'scale(', 'rotate(', 'skew(', 'perspective(']
+  if (unsupportedTransformTokens.some(token => normalized.includes(token))) {
+    warnings.push('Node "' + nodeLabel + '" uses unsupported transform "' + transformRaw + '"; ignored.')
+    return { x: 0, y: 0 }
+  }
+
+  const translateMatch = normalized.match(/^translate\(([^,]+),\s*([^)]+)\)$/)
+  if (translateMatch) {
+    const xLength = parseLength(translateMatch[1])
+    const yLength = parseLength(translateMatch[2])
+    if (!xLength || !yLength || !isPxLike(xLength) || !isPxLike(yLength)) {
+      warnings.push('Node "' + nodeLabel + '" uses unsupported translate values in transform "' + transformRaw + '"; ignored.')
+      return { x: 0, y: 0 }
+    }
+    return { x: xLength.value, y: yLength.value }
+  }
+
+  const translateXMatch = normalized.match(/translatex\(([^)]+)\)/)
+  const translateYMatch = normalized.match(/translatey\(([^)]+)\)/)
+  if (translateXMatch || translateYMatch) {
+    const xLength = parseLength(translateXMatch?.[1])
+    const yLength = parseLength(translateYMatch?.[1])
+
+    if ((xLength && !isPxLike(xLength)) || (yLength && !isPxLike(yLength))) {
+      warnings.push('Node "' + nodeLabel + '" uses unsupported translate unit in transform "' + transformRaw + '"; ignored.')
+      return { x: 0, y: 0 }
+    }
+
+    return {
+      x: xLength?.value ?? 0,
+      y: yLength?.value ?? 0,
+    }
+  }
+
+  warnings.push('Node "' + nodeLabel + '" uses unsupported transform "' + transformRaw + '"; ignored.')
+  return { x: 0, y: 0 }
+}
+
+function parseFontWeight(value                    )                     {
+  if (!value) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return undefined
+  if (normalized === 'normal') return 400
+  if (normalized === 'bold') return 700
+  const parsed = Number.parseInt(normalized, 10)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function normalizeTextAlign(value                    )                                               {
+  if (!value) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'start') return 'left'
+  if (normalized === 'end') return 'right'
+  if (normalized === 'left' || normalized === 'center' || normalized === 'right' || normalized === 'justify') {
+    return normalized
+  }
+  return undefined
+}
+
+function parsePxLength(value                    )                     {
+  const parsed = parseLength(value)
+  if (!parsed || !isPxLike(parsed)) return undefined
+  return parsed.value
+}
+
+function normalizeBorderStyle(value                    )                     {
+  if (!value) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (!normalized || normalized === 'none' || normalized === 'hidden') return undefined
+  return normalized
+}
+
+// Split a `border` shorthand (e.g. "1px solid #ccc" or "2px dashed red") into its
+// width / style / color parts. Only used when the specific longhand property is
+// absent; otherwise the shorthand color leaks into the color slot and is later
+// rejected by the exporter, dropping the border entirely.
+function parseBorderShorthand(value                    )                                                     {
+  if (!value) return {}
+  const raw = value.trim()
+  if (!raw) return {}
+
+  const colorFuncOrHex = raw.match(/#[0-9a-fA-F]{3,8}\b|(?:rgb|rgba|hsl|hsla)\([^)]*\)/)
+  let color = colorFuncOrHex ? colorFuncOrHex[0] : undefined
+  let rest = color ? raw.replace(color, ' ') : raw
+
+  const styleMatch = rest.match(/\b(solid|dashed|dotted|double|groove|ridge|inset|outset|none|hidden)\b/i)
+  const style = styleMatch ? styleMatch[0] : undefined
+  if (styleMatch) rest = rest.replace(styleMatch[0], ' ')
+
+  const widthMatch = rest.match(/-?\d*\.?\d+(?:px|em|rem|pt|%)?/)
+  const width = widthMatch ? widthMatch[0] : undefined
+  if (widthMatch) rest = rest.replace(widthMatch[0], ' ')
+
+  if (!color) {
+    const remaining = rest.trim().split(/\s+/).filter(Boolean)
+    if (remaining.length > 0) color = remaining[remaining.length - 1]
+  }
+
+  return { width, style, color }
+}
+
+function extractStyle(
+  styleMap                        ,
+  computedStyle                            ,
+  warnings           = [],
+  nodeLabel = 'element',
+)                      {
+  const fontSizeLength = parseLength(computedStyle?.fontSize || styleMap['font-size'])
+  const lineHeightLength = parseLength(computedStyle?.lineHeight || styleMap['line-height'])
+  const fontWeight = parseFontWeight(computedStyle?.fontWeight || styleMap['font-weight'])
+  const color = normalizeColor(computedStyle?.color || styleMap.color)
+  const { backgroundFill, backgroundColor } = resolveComputedBackground(computedStyle, styleMap)
+  const borderShorthand = parseBorderShorthand(styleMap.border)
+  const borderColor = normalizeColor(computedStyle?.borderColor || styleMap['border-color'] || borderShorthand.color)
+  const borderWidth = parsePxLength(computedStyle?.borderWidth || styleMap['border-width'] || borderShorthand.width)
+  const borderStyle = normalizeBorderStyle(computedStyle?.borderStyle || styleMap['border-style'] || borderShorthand.style)
+  const borderRadius = parsePxLength(computedStyle?.borderRadius || styleMap['border-radius'])
+  const shadowRaw = (computedStyle?.boxShadow || styleMap['box-shadow'] || '').trim()
+  const boxShadow = shadowRaw && shadowRaw.toLowerCase() !== 'none' ? shadowRaw : undefined
+  const fontStyleRaw = (computedStyle?.fontStyle || styleMap['font-style'] || '').trim().toLowerCase()
+  const fontStyle = fontStyleRaw === 'italic' ? 'italic' : undefined
+  const textAlign = normalizeTextAlign(computedStyle?.textAlign || styleMap['text-align'])
+  const fontFamilyRaw = (computedStyle?.fontFamily || styleMap['font-family'] || '').trim()
+  const fontFamily = resolveFontFamily(fontFamilyRaw, warnings, nodeLabel)
+
+  return {
+    fontSize: fontSizeLength && isPxLike(fontSizeLength) ? fontSizeLength.value : undefined,
+    fontWeight,
+    fontFamily,
+    color,
+    backgroundColor,
+    backgroundFill,
+    borderColor,
+    borderWidth: typeof borderWidth === 'number' && borderWidth > 0 ? borderWidth : undefined,
+    borderStyle,
+    borderRadius: typeof borderRadius === 'number' && borderRadius > 0 ? borderRadius : undefined,
+    boxShadow,
+    fontStyle,
+    lineHeight: lineHeightLength && isPxLike(lineHeightLength) ? lineHeightLength.value : undefined,
+    textAlign,
+  }
+}
+
+function getCanvasRoot(doc          )                     {
+  if (!doc.body) return null
+
+  const prioritizedSelectors = ['.page', '[data-slide-root]', '.slide-canvas', '.slide']
+  for (const selector of prioritizedSelectors) {
+    const matches = Array.from(doc.querySelectorAll             (selector))
+    if (matches.length === 0) continue
+
+    const best = matches
+      .map((candidate) => ({
+        candidate,
+        score: estimateNodeAreaFromDeclaredSize(candidate),
+      }))
+      .sort((a, b) => b.score - a.score)[0]
+
+    if (best?.candidate) return best.candidate
+  }
+
+  const scoredCandidates = Array.from(doc.body.querySelectorAll             ('div,section,article,main'))
+    .map((candidate) => {
+      const styleMap = parseInlineStyle(candidate.getAttribute('style') || '')
+      const width = parsePositivePx(styleMap.width ?? candidate.getAttribute('width'))
+      const height = parsePositivePx(styleMap.height ?? candidate.getAttribute('height'))
+      if (!width || !height) return { candidate, score: 0 }
+
+      const ratio = width / height
+      const ratioDelta = Math.abs(ratio - CANVAS_TARGET_ASPECT_RATIO)
+      const ratioScore = Math.max(0, 1 - Math.min(1, ratioDelta / 0.9))
+      const areaScore = width * height
+      const className = (candidate.className || '').toString().toLowerCase()
+      const semanticBoost = /slide|deck|canvas|presentation|frame|artboard/.test(className) ? 1_000_000 : 0
+      return {
+        candidate,
+        score: areaScore * ratioScore + semanticBoost,
+      }
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  if (scoredCandidates.length > 0) return scoredCandidates[0].candidate
+
+  return doc.body
+}
+
+function shouldImportNode(node             , computedStyle                            )          {
+  const style = parseInlineStyle(node.getAttribute('style') || '')
+  const computedPosition = (computedStyle?.position || '').trim().toLowerCase()
+  const computedLeft = (computedStyle?.left || '').trim().toLowerCase()
+  const computedTop = (computedStyle?.top || '').trim().toLowerCase()
+  const hasComputedPlacement = (computedLeft && computedLeft !== 'auto') || (computedTop && computedTop !== 'auto')
+  const hasPositionInfo =
+    style.position === 'absolute' ||
+    style.position === 'fixed' ||
+    computedPosition === 'absolute' ||
+    computedPosition === 'fixed' ||
+    style.left !== undefined ||
+    style.top !== undefined ||
+    hasComputedPlacement
+
+  if (!hasPositionInfo) return false
+  const tag = node.tagName.toLowerCase()
+  if (FLOW_MEDIA_TAGS.has(tag)) return true
+
+  const ownText = hasOwnTextNode(node)
+  if (ownText) return true
+
+  const hasBackground = Boolean(
+    normalizeColor(computedStyle?.backgroundColor) ||
+    normalizeBackgroundImage(computedStyle?.backgroundImage),
+  )
+  const hasBorder = computedStyle ? hasRenderedBorder(computedStyle) : false
+  return hasBackground || hasBorder
+}
+
+function getNodeLabel(node             )         {
+  const id = node.getAttribute('id')
+  if (id) return '#' + id
+
+  const rawClassName = node.className
+  const className = typeof rawClassName === 'string'
+    ? rawClassName
+    : typeof (rawClassName                        ).baseVal === 'string'
+      ? (rawClassName                        ).baseVal || ''
+      : ''
+  const classes = (className || '').trim()
+  if (classes) {
+    const firstClass = classes.split(/\s+/).filter(Boolean)[0]
+    if (firstClass) return '.' + firstClass
+  }
+
+  return node.tagName.toLowerCase()
+}
+
+function asCanonicalDimension(value                    , fallback = 0)         {
+  if (value === undefined || !Number.isFinite(value)) return fallback
+  const rounded = Number(value.toFixed(3))
+  const nearestInteger = Math.round(rounded)
+  if (Math.abs(rounded - nearestInteger) <= 0.5) return nearestInteger
+  return rounded
+}
+
+function asCanonicalDimensionOptional(value                    )                     {
+  if (value === undefined) return undefined
+  if (!Number.isFinite(value)) return undefined
+  const rounded = Number(value.toFixed(3))
+  const nearestInteger = Math.round(rounded)
+  if (Math.abs(rounded - nearestInteger) <= 0.5) return nearestInteger
+  return rounded
+}
+
+function getComponentContentBounds(components                  )                       {
+  if (components.length === 0) return null
+
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxRight = 0
+  let maxBottom = 0
+
+  for (const component of components) {
+    const width = Number.isFinite(component.width) ? component.width : 0
+    const height = Number.isFinite(component.height || 0) ? (component.height || 0) : 0
+    minX = Math.min(minX, component.x)
+    minY = Math.min(minY, component.y)
+    maxRight = Math.max(maxRight, component.x + Math.max(0, width))
+    maxBottom = Math.max(maxBottom, component.y + Math.max(0, height))
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null
+  const width = Math.max(1, maxRight - minX)
+  const height = Math.max(1, maxBottom - minY)
+  return { minX, minY, maxRight, maxBottom, width, height }
+}
+
+function normalizeCanvasToContentBounds(
+  components                  ,
+  canvas                                                        ,
+  warnings          ,
+)                                                                                                   {
+  const bounds = getComponentContentBounds(components)
+  if (!bounds) return { components, canvas }
+
+  const oversizedCanvas = canvas.width > 4096 || canvas.height > 4096
+  if (!oversizedCanvas) return { components, canvas }
+
+  const shifted = components.map((component) => ({
+    ...component,
+    x: asCanonicalDimension(component.x - bounds.minX),
+    y: asCanonicalDimension(component.y - bounds.minY),
+  }))
+  const normalizedCanvas = {
+    ...canvas,
+    width: asCanonicalDimension(Math.max(1, bounds.width)),
+    height: asCanonicalDimension(Math.max(1, bounds.height)),
+  }
+  warnings.push(
+    `Normalized oversized canvas to content bounds ${normalizedCanvas.width}x${normalizedCanvas.height} for import usability.`,
+  )
+  return { components: shifted, canvas: normalizedCanvas }
+}
+
+function measureNodeRect(node             , root             )                   {
+  if (typeof node.getBoundingClientRect !== 'function' || typeof root.getBoundingClientRect !== 'function') {
+    return {}
+  }
+
+  const rect = node.getBoundingClientRect()
+  const rootRect = root.getBoundingClientRect()
+  if (!Number.isFinite(rect.left) || !Number.isFinite(rootRect.left)) return {}
+
+  return {
+    x: Math.max(0, rect.left - rootRect.left),
+    y: Math.max(0, rect.top - rootRect.top),
+    width: Number.isFinite(rect.width) && rect.width > 0 ? rect.width : undefined,
+    height: Number.isFinite(rect.height) && rect.height > 0 ? rect.height : undefined,
+  }
+}
+
+function measureContentBounds(
+  nodes               ,
+  snapshot                ,
+  root             ,
+)                                      {
+  let maxRight = 0
+  let maxBottom = 0
+
+  for (const node of nodes) {
+    const nodeId = node.getAttribute('data-import-node-id') || ''
+    const renderNode = snapshot.nodesById.get(nodeId) || node
+    const renderRoot = snapshot.root || root
+    const measured = measureNodeRect(renderNode, renderRoot)
+    if (measured.width === undefined || measured.height === undefined) continue
+    const x = measured.x || 0
+    const y = measured.y || 0
+    maxRight = Math.max(maxRight, x + measured.width)
+    maxBottom = Math.max(maxBottom, y + measured.height)
+  }
+
+  return {
+    width: maxRight > 0 ? maxRight : undefined,
+    height: maxBottom > 0 ? maxBottom : undefined,
+  }
+}
+
+function clampAutoImportCanvasAxis(axisValue        , label                    , warnings          )         {
+  const defaultAxis = label === 'width' ? DEFAULT_CANVAS_WIDTH : DEFAULT_CANVAS_HEIGHT
+  const maxAxis = Math.round(defaultAxis * IMPORT_AUTO_CANVAS_SCALE_MAX)
+  if (axisValue <= maxAxis) return axisValue
+
+  warnings.push(
+    `Source ${label} ${axisValue}px exceeds auto-import safety cap ${maxAxis}px; clamped to avoid compressed output.`,
+  )
+  return maxAxis
+}
+
+async function buildRenderSnapshot(doc          , root             , styleChunks                     )                          {
+  if (typeof document === 'undefined' || !document.body) {
+    return {
+      root: null,
+      nodesById: new Map(),
+      dispose: () => {},
+    }
+  }
+
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  iframe.tabIndex = -1
+  iframe.style.position = 'fixed'
+  iframe.style.left = '-100000px'
+  iframe.style.top = '-100000px'
+  iframe.style.width = '1920px'
+  iframe.style.height = '1080px'
+  iframe.style.opacity = '0'
+  iframe.style.pointerEvents = 'none'
+  iframe.style.zIndex = '-1'
+  iframe.style.overflow = 'hidden'
+  iframe.setAttribute('sandbox', 'allow-same-origin')
+  document.body.appendChild(iframe)
+
+  const sandboxDoc = iframe.contentDocument
+  if (!sandboxDoc) {
+    iframe.remove()
+    return {
+      root: null,
+      nodesById: new Map(),
+      dispose: () => {},
+    }
+  }
+
+  sandboxDoc.open()
+  sandboxDoc.write('<!doctype html><html><head></head><body></body></html>')
+  sandboxDoc.close()
+
+  const sandboxBody = sandboxDoc.body
+  if (!sandboxBody) {
+    iframe.remove()
+    return {
+      root: null,
+      nodesById: new Map(),
+      dispose: () => {},
+    }
+  }
+
+  sandboxBody.style.margin = '0'
+  sandboxBody.style.padding = '0'
+  sandboxBody.style.overflow = 'hidden'
+
+  if (styleChunks.length > 0 && sandboxDoc.head) {
+    const styleEl = sandboxDoc.createElement('style')
+    styleEl.textContent = styleChunks
+      .map(({ cssText }) => cssText)
+      .filter(Boolean)
+      .join('\n')
+    sandboxDoc.head.appendChild(styleEl)
+  }
+
+  let rootClone                     = null
+  const sourceBody = doc.body
+  if (sourceBody) {
+    const bodyClone = sourceBody.cloneNode(true)               
+    for (const attr of Array.from(sourceBody.attributes)) {
+      sandboxBody.setAttribute(attr.name, attr.value)
+    }
+    const sourceRootIsBody = root === sourceBody
+    sandboxBody.replaceChildren(...Array.from(bodyClone.childNodes))
+
+    if (sourceRootIsBody) {
+      sandboxBody.setAttribute(IMPORT_ROOT_MARKER_ATTR, IMPORT_ROOT_MARKER_VALUE)
+      rootClone = sandboxBody
+    } else {
+      rootClone = sandboxBody.querySelector             (`[${IMPORT_ROOT_MARKER_ATTR}="${IMPORT_ROOT_MARKER_VALUE}"]`)
+    }
+  }
+
+  if (!rootClone) {
+    rootClone = root.cloneNode(true)               
+    sandboxBody.replaceChildren(rootClone)
+  }
+
+  await settleRenderSnapshot(sandboxDoc)
+
+  const nodesById = new Map                     ()
+  for (const node of Array.from(sandboxDoc.querySelectorAll             ('[data-import-node-id]'))) {
+    const id = node.getAttribute('data-import-node-id')
+    if (!id) continue
+    nodesById.set(id, node)
+  }
+
+  return {
+    root: rootClone,
+    nodesById,
+    dispose: () => {
+      iframe.remove()
+    },
+  }
+}
+
+function hasOwnTextNode(node             )          {
+  return Array.from(node.childNodes).some((child) => child.nodeType === 3 && Boolean(child.textContent?.trim()))
+}
+
+function extractPseudoComponents(
+  descriptors                         ,
+  renderSnapshot                ,
+  root             ,
+  renderRoot             ,
+  warnings          ,
+)                                {
+  const pseudoByHost = new Map                          ()
+  const mergedStyles = new Map                                                                                         ()
+
+  for (const descriptor of descriptors) {
+    const hostPseudoKey = descriptor.hostId + '|' + descriptor.pseudo
+    const existing = mergedStyles.get(hostPseudoKey)
+    mergedStyles.set(hostPseudoKey, {
+      pseudo: descriptor.pseudo,
+      order: descriptor.order,
+      styleMap: {
+        ...(existing?.styleMap || {}),
+        ...descriptor.styleMap,
+      },
+    })
+  }
+
+  for (const [hostPseudoKey, { pseudo, order, styleMap }] of mergedStyles.entries()) {
+    const [hostId] = hostPseudoKey.split('|')
+    if (hostId === IMPORT_ROOT_NODE_ID) {
+      warnings.push('Skipped root pseudo-element decorative overlay during import.')
+      continue
+    }
+    const hostNode = root.querySelector             (`[data-import-node-id="${hostId}"]`)
+    if (!hostNode) continue
+
+    const renderNode = renderSnapshot.nodesById.get(hostId) || hostNode
+    const measuredHost = measureNodeRect(renderNode, renderRoot)
+    const hostStyleMap = parseInlineStyle(hostNode.getAttribute('style') || '')
+    const hostComputedStyle = readComputedStyleSafe(renderNode)
+    const hostLabel = getNodeLabel(hostNode)
+
+    const pseudoLabel = hostLabel + '::' + pseudo
+    const pseudoContent = buildPseudoContent(styleMap, pseudoLabel, warnings)
+    const pseudoWidth = parsePseudoDimension(styleMap, 'width', pseudoLabel, warnings)
+    const pseudoHeight = parsePseudoDimension(styleMap, 'height', pseudoLabel, warnings)
+    if (!shouldImportPseudoLayer(styleMap, pseudoWidth, pseudoHeight)) continue
+
+    const hostX = typeof measuredHost.x === 'number' && Number.isFinite(measuredHost.x) ? measuredHost.x : 0
+    const hostY = typeof measuredHost.y === 'number' && Number.isFinite(measuredHost.y) ? measuredHost.y : 0
+    const pseudoX = hostX + computePseudoOffset(styleMap, 'x', measuredHost, pseudoLabel, warnings)
+    const pseudoY = hostY + computePseudoOffset(styleMap, 'y', measuredHost, pseudoLabel, warnings)
+
+    const mergedStyleMap = {
+      ...hostStyleMap,
+      ...styleMap,
+    }
+    const extractedStyle = extractStyle(mergedStyleMap, hostComputedStyle, warnings, pseudoLabel)
+
+    const pseudoComponent                 = {
+      id: `import-${hostId}-${pseudo}-${order}`,
+      type: 'panel',
+      sourceLabel: pseudoLabel,
+      x: asCanonicalDimension(pseudoX),
+      y: asCanonicalDimension(pseudoY),
+      width: asCanonicalDimension(pseudoWidth ?? 16),
+      height: asCanonicalDimensionOptional(pseudoHeight),
+      content: pseudoContent || '\u00a0',
+      style: extractedStyle,
+      locked: false,
+      visible: true,
+    }
+    pseudoByHost.set(hostId, [...(pseudoByHost.get(hostId) || []), pseudoComponent])
+  }
+
+  for (const [, components] of pseudoByHost) {
+    components.sort((a, b) => {
+      const aBefore = (a.sourceLabel || '').includes('::before')
+      const bBefore = (b.sourceLabel || '').includes('::before')
+      if (aBefore && !bBefore) return -1
+      if (!aBefore && bBefore) return 1
+      return 0
+    })
+  }
+
+  return pseudoByHost
+}
+
+function shouldImportFlowNode(
+  node             ,
+  computedStyle                            ,
+  measuredRect                  ,
+)          {
+  if (!computedStyle) return false
+
+  const display = (computedStyle.display || '').trim().toLowerCase()
+  const visibility = (computedStyle.visibility || '').trim().toLowerCase()
+  const opacity = Number.parseFloat(computedStyle.opacity || '1')
+  if (display === 'none' || visibility === 'hidden') return false
+  if (Number.isFinite(opacity) && opacity <= 0.01) return false
+
+  const width = measuredRect.width || 0
+  const height = measuredRect.height || 0
+  if (width < MIN_FLOW_NODE_SIZE || height < MIN_FLOW_NODE_SIZE) return false
+
+  const tag = node.tagName.toLowerCase()
+  if (FLOW_MEDIA_TAGS.has(tag)) return true
+
+  const text = (node.textContent || '').trim()
+  const ownText = hasOwnTextNode(node)
+  const hasBackground = Boolean(
+    normalizeColor(computedStyle.backgroundColor) ||
+    normalizeBackgroundImage(computedStyle.backgroundImage),
+  )
+  const hasBorder = hasRenderedBorder(computedStyle)
+
+  if (hasBackground || hasBorder) return true
+  if (FLOW_TEXT_TAGS.has(tag) && text.length > 0) return true
+  if (ownText && display !== 'inline') return true
+
+  return false
+}
+
+async function convertHtmlToSlideComponents(html        )                             {
+  const warnings           = []
+  const buildEmergencyFallbackImportResult = (reason        )                    => {
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(html, 'text/html')
+    const emergencyRoot = getCanvasRoot(doc) || doc.body
+    const rootStyle = emergencyRoot ? parseInlineStyle(emergencyRoot.getAttribute('style') || '') : {}
+    const fallbackCanvas = {
+      width: parseCanvasPx(rootStyle.width, 'width', warnings) || DEFAULT_CANVAS_WIDTH,
+      height: parseCanvasPx(rootStyle.height, 'height', warnings) || DEFAULT_CANVAS_HEIGHT,
+    }
+    const sanitizedRoot = emergencyRoot ? buildSanitizedContentNode(emergencyRoot) : null
+    const fallbackContent = sanitizedRoot?.innerHTML.trim() || sanitizedRoot?.outerHTML.trim() || html.trim()
+    const fallbackComponents                   = [{
+      id: 'import-001',
+      type: 'panel',
+      sourceLabel: `${emergencyRoot ? getNodeLabel(emergencyRoot) : 'html-root'} (fallback)`,
+      x: 0,
+      y: 0,
+      width: fallbackCanvas.width,
+      height: fallbackCanvas.height,
+      content: fallbackContent,
+      style: extractStyle(rootStyle, emergencyRoot ? readComputedStyleSafe(emergencyRoot) : null, warnings, 'fallback-root'),
+      locked: true,
+      visible: true,
+    }]
+    warnings.push(`Import parser fallback engaged (${reason}); loaded simplified locked layer.`)
+    const uniqueWarnings = Array.from(new Set(warnings))
+    return {
+      document: createSlideDocument({
+        canvas: fallbackCanvas,
+        components: fallbackComponents,
+        warnings: uniqueWarnings,
+      }),
+      canvas: fallbackCanvas,
+      components: fallbackComponents,
+      warnings: uniqueWarnings,
+    }
+  }
+
+  let normalizedHtml = ''
+  let doc          
+  let root                     = null
+  try {
+    normalizedHtml = normalizeImportedHtmlMarkup(html, warnings)
+    const parser = new DOMParser()
+    doc = parser.parseFromString(normalizedHtml, 'text/html')
+    root = getCanvasRoot(doc)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || 'normalize_or_parse_failed')
+    return buildEmergencyFallbackImportResult(message)
+  }
+
+  if (!root) {
+    return buildEmergencyFallbackImportResult('slide_root_not_detected')
+  }
+
+  root.setAttribute(IMPORT_ROOT_MARKER_ATTR, IMPORT_ROOT_MARKER_VALUE)
+  root.setAttribute('data-import-node-id', IMPORT_ROOT_NODE_ID)
+  const allNodes = Array.from(root.querySelectorAll             ('*'))
+  for (let index = 0; index < allNodes.length; index += 1) {
+    allNodes[index].setAttribute('data-import-node-id', `import-node-${index + 1}`)
+  }
+
+  let inlinedStyleChunks                      = []
+  try {
+    inlinedStyleChunks = await inlineExternalStylesheets(doc, warnings)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || 'stylesheet_inline_failed')
+    warnings.push(`Stylesheet inlining failed (${message}); continuing with available styles.`)
+  }
+  const styleSources = inlinedStyleChunks.map(({ cssText }) => cssText).join('\n')
+  const styleSourceText = inlinedStyleChunks.map(({ cssText }) => cssText).join('\n').toLowerCase()
+  if (styleSourceText.includes('@keyframes') || /\banimation\s*:/.test(styleSourceText)) {
+    warnings.push('Detected CSS animations; animation effects are not imported and static styles are used.')
+  }
+  if (root.querySelector('canvas')) {
+    warnings.push('Detected canvas elements; canvas pixel content is not extracted into editable layers.')
+  }
+  if (root.querySelector('video')) {
+    warnings.push('Detected video elements; video playback layers are not imported as editable slide components.')
+  }
+  const buildFallbackImportResult = (reason        )                    => {
+    const rootStyle = parseInlineStyle(root.getAttribute('style') || '')
+    const fallbackCanvas = {
+      width: parseCanvasPx(rootStyle.width ?? root.getAttribute('width') ?? undefined, 'width', warnings) || DEFAULT_CANVAS_WIDTH,
+      height: parseCanvasPx(rootStyle.height ?? root.getAttribute('height') ?? undefined, 'height', warnings) || DEFAULT_CANVAS_HEIGHT,
+    }
+    const sanitizedRoot = buildSanitizedContentNode(root)
+    const fallbackComponents                   = [{
+      id: 'import-001',
+      type: 'panel',
+      sourceLabel: `${getNodeLabel(root)} (fallback)`,
+      x: 0,
+      y: 0,
+      width: fallbackCanvas.width,
+      height: fallbackCanvas.height,
+      content: sanitizedRoot.innerHTML.trim() || sanitizedRoot.outerHTML.trim(),
+      style: extractStyle(rootStyle, readComputedStyleSafe(root), warnings, getNodeLabel(root)),
+      locked: true,
+      visible: true,
+    }]
+    warnings.push(`High-fidelity import mode failed (${reason}); loaded simplified fallback layer.`)
+    const uniqueWarnings = Array.from(new Set(warnings))
+    return {
+      document: createSlideDocument({
+        canvas: fallbackCanvas,
+        components: fallbackComponents,
+        warnings: uniqueWarnings,
+      }),
+      canvas: fallbackCanvas,
+      components: fallbackComponents,
+      warnings: uniqueWarnings,
+    }
+  }
+
+  let renderSnapshot                
+  try {
+    renderSnapshot = await buildRenderSnapshot(doc, root, inlinedStyleChunks)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || 'render_snapshot_failed')
+    return buildFallbackImportResult(message)
+  }
+
+  try {
+    const rootStyle = parseInlineStyle(root.getAttribute('style') || '')
+    const measuredRootRect = renderSnapshot.root ? measureNodeRect(renderSnapshot.root, renderSnapshot.root) : {}
+    const explicitCanvasWidth = parseCanvasPx(rootStyle.width ?? root.getAttribute('width') ?? undefined, 'width', warnings)
+    const explicitCanvasHeight = parseCanvasPx(rootStyle.height ?? root.getAttribute('height') ?? undefined, 'height', warnings)
+    const computedRootStyle = readComputedStyleSafe(renderSnapshot.root || root)
+    const computedCanvasWidth = parseLength(computedRootStyle?.width || '')?.value
+    const computedCanvasHeight = parseLength(computedRootStyle?.height || '')?.value
+    const sourceBodyStyle = doc.body ? parseInlineStyle(doc.body.getAttribute('style') || '') : {}
+    const sourceHtmlStyle = doc.documentElement ? parseInlineStyle(doc.documentElement.getAttribute('style') || '') : {}
+    const renderBody = renderSnapshot.root?.ownerDocument?.body
+    const renderHtml = renderSnapshot.root?.ownerDocument?.documentElement
+    const computedBodyStyle = renderBody ? readComputedStyleSafe(renderBody) : null
+    const computedHtmlStyle = renderHtml ? readComputedStyleSafe(renderHtml) : null
+    const rootBackground = resolveComputedBackground(computedRootStyle, rootStyle)
+    const bodyBackground = resolveComputedBackground(computedBodyStyle, sourceBodyStyle)
+    const htmlBackground = resolveComputedBackground(computedHtmlStyle, sourceHtmlStyle)
+    const canvasBackground = normalizeBackgroundFill(
+      rootBackground.backgroundFill ||
+      rootBackground.backgroundColor ||
+      bodyBackground.backgroundFill ||
+      bodyBackground.backgroundColor ||
+      htmlBackground.backgroundFill ||
+      htmlBackground.backgroundColor,
+    )
+
+    const absoluteNodes = allNodes.filter((node) => {
+      const nodeId = node.getAttribute('data-import-node-id') || ''
+      const renderNode = renderSnapshot.nodesById.get(nodeId) || node
+      return shouldImportNode(node, readComputedStyleSafe(renderNode))
+    })
+    const fallbackNodes = Array.from(root.children).filter((node)                      => node instanceof HTMLElement)
+    const flowNodes = allNodes.filter((node) => {
+      const nodeId = node.getAttribute('data-import-node-id') || ''
+      const renderNode = renderSnapshot.nodesById.get(nodeId) || node
+      const renderRoot = renderSnapshot.root || root
+      const measuredRect = measureNodeRect(renderNode, renderRoot)
+      return shouldImportFlowNode(node, readComputedStyleSafe(renderNode), measuredRect)
+    })
+    const nodes = absoluteNodes.length > 0
+      ? absoluteNodes
+      : flowNodes.length > 0
+        ? flowNodes
+        : fallbackNodes.length > 0
+          ? fallbackNodes
+          : [root]
+    const importMode = absoluteNodes.length > 0
+      ? 'absolute'
+      : flowNodes.length > 0
+        ? 'flow'
+        : fallbackNodes.length > 0
+          ? 'fallback'
+          : 'root-fallback'
+    const contentBounds = measureContentBounds(nodes, renderSnapshot, root)
+    const pseudoDescriptors = parsePseudoLayerDescriptors(styleSources, root)
+    const pseudoByHost = extractPseudoComponents(
+      pseudoDescriptors,
+      renderSnapshot,
+      root,
+      renderSnapshot.root || root,
+      warnings,
+    )
+    const pseudoLayerCount = Array.from(pseudoByHost.values()).reduce((total, entries) => total + entries.length, 0)
+    if (pseudoDescriptors.length > 0 && pseudoLayerCount === 0) {
+      warnings.push('Pseudo-element selectors were detected but could not be resolved to rendered layers.')
+    } else if (pseudoLayerCount > 0) {
+      warnings.push(
+        'Extracted ' + pseudoLayerCount + ' pseudo-element layer' + (pseudoLayerCount === 1 ? '' : 's') + ' from CSS.',
+      )
+    }
+    const hasDeclaredCanvasWidth = explicitCanvasWidth !== undefined || typeof computedCanvasWidth === 'number'
+    const hasDeclaredCanvasHeight = explicitCanvasHeight !== undefined || typeof computedCanvasHeight === 'number'
+
+    let sourceCanvasWidth = explicitCanvasWidth
+      ?? (typeof computedCanvasWidth === 'number' ? canonicalCanvasValue(computedCanvasWidth, DEFAULT_CANVAS_WIDTH, warnings, 'width', 'computed style') : undefined)
+      ?? canonicalCanvasValue(measuredRootRect.width, DEFAULT_CANVAS_WIDTH, warnings, 'width', 'measured root')
+    let sourceCanvasHeight = explicitCanvasHeight
+      ?? (typeof computedCanvasHeight === 'number' ? canonicalCanvasValue(computedCanvasHeight, DEFAULT_CANVAS_HEIGHT, warnings, 'height', 'computed style') : undefined)
+      ?? canonicalCanvasValue(measuredRootRect.height, DEFAULT_CANVAS_HEIGHT, warnings, 'height', 'measured root')
+
+    sourceCanvasWidth = clampAutoImportCanvasAxis(sourceCanvasWidth, 'width', warnings)
+    sourceCanvasHeight = clampAutoImportCanvasAxis(sourceCanvasHeight, 'height', warnings)
+
+    if (!hasDeclaredCanvasWidth && contentBounds.width && sourceCanvasWidth > contentBounds.width * CANVAS_AUTO_SCALE_RATIO_THRESHOLD) {
+      sourceCanvasWidth = Math.max(contentBounds.width, DEFAULT_CANVAS_WIDTH)
+      warnings.push(
+        'Detected oversized root width during import; normalized canvas width using layer bounds to avoid compressed output.',
+      )
+    }
+    if (!hasDeclaredCanvasHeight && contentBounds.height && sourceCanvasHeight > contentBounds.height * CANVAS_AUTO_SCALE_RATIO_THRESHOLD) {
+      sourceCanvasHeight = Math.max(contentBounds.height, DEFAULT_CANVAS_HEIGHT)
+      warnings.push(
+        'Detected oversized root height during import; normalized canvas height using layer bounds to avoid compressed output.',
+      )
+    }
+
+    if (absoluteNodes.length === 0) {
+      if (flowNodes.length > 0) {
+        warnings.push('No absolutely positioned elements found; imported flow-layout nodes using computed bounds.')
+      } else {
+        warnings.push('No absolutely positioned elements found; imported top-level nodes as fallback.')
+      }
+    }
+    if (sourceCanvasWidth !== DEFAULT_CANVAS_WIDTH || sourceCanvasHeight !== DEFAULT_CANVAS_HEIGHT) {
+      warnings.push(
+        'Detected source canvas ' +
+        sourceCanvasWidth +
+        'x' +
+        sourceCanvasHeight +
+        ' (canonical coordinates preserved).',
+      )
+    }
+    if (importMode === 'fallback' && nodes.length > 0) {
+      warnings.push(`Imported ${nodes.length} fallback node${nodes.length === 1 ? '' : 's'} as locked layers for visual fidelity.`)
+    }
+    if (importMode === 'root-fallback') {
+      warnings.push('No importable child layers were detected; imported the slide root as a locked fallback layer.')
+    }
+
+    const components                   = []
+    for (let index = 0; index < nodes.length; index += 1) {
+      const node = nodes[index]
+      const styleMap = parseInlineStyle(node.getAttribute('style') || '')
+      const nodeLabel = getNodeLabel(node)
+      const nodeId = node.getAttribute('data-import-node-id') || ''
+      const renderNode = renderSnapshot.nodesById.get(nodeId) || node
+      const renderRoot = renderSnapshot.root || root
+      const computedStyle = readComputedStyleSafe(renderNode)
+      const measured = measureNodeRect(renderNode, renderRoot)
+      const sanitizedNode = buildSanitizedContentNode(renderNode)
+      const isSvg = node.tagName.toLowerCase() === 'svg'
+      const content = isSvg
+        ? resolveSvgImageFallback(sanitizedNode, nodeLabel, warnings)
+        : (sanitizedNode.innerHTML.trim() || sanitizedNode.outerHTML.trim())
+
+      const explicitLeft = parseStylePositionPx(styleMap, 'left', nodeLabel, warnings, sourceCanvasWidth)
+      const explicitTop = parseStylePositionPx(styleMap, 'top', nodeLabel, warnings, sourceCanvasHeight)
+      const explicitMarginLeft = parseStyleOffsetPx(styleMap, 'margin-left', nodeLabel, warnings, sourceCanvasWidth)
+      const explicitMarginTop = parseStyleOffsetPx(styleMap, 'margin-top', nodeLabel, warnings, sourceCanvasHeight)
+      const computedLeft = parseComputedPositionPx(computedStyle?.left, 'left', nodeLabel, warnings, sourceCanvasWidth)
+      const computedTop = parseComputedPositionPx(computedStyle?.top, 'top', nodeLabel, warnings, sourceCanvasHeight)
+      const computedMarginLeft = parseStyleOffsetPx({ 'margin-left': computedStyle?.marginLeft || '' }, 'margin-left', nodeLabel, warnings, sourceCanvasWidth)
+      const computedMarginTop = parseStyleOffsetPx({ 'margin-top': computedStyle?.marginTop || '' }, 'margin-top', nodeLabel, warnings, sourceCanvasHeight)
+      const transformOffsets = parseTransformOffsets(styleMap.transform, nodeLabel, warnings)
+      const layoutX = Number.isFinite(renderNode.offsetLeft) ? renderNode.offsetLeft : undefined
+      const layoutY = Number.isFinite(renderNode.offsetTop) ? renderNode.offsetTop : undefined
+      const measuredX = typeof measured.x === 'number' && Number.isFinite(measured.x) ? measured.x : undefined
+      const measuredY = typeof measured.y === 'number' && Number.isFinite(measured.y) ? measured.y : undefined
+      const measuredOrLayoutX = measuredX !== undefined
+        ? ((measuredX === 0 && layoutX !== undefined && layoutX > 0) ? layoutX : measuredX)
+        : layoutX
+      const measuredOrLayoutY = measuredY !== undefined
+        ? ((measuredY === 0 && layoutY !== undefined && layoutY > 0) ? layoutY : measuredY)
+        : layoutY
+      const hasNestedRenderParent = Boolean(
+        renderRoot &&
+        renderNode.parentElement &&
+        renderNode.parentElement !== renderRoot &&
+        renderRoot.contains(renderNode.parentElement),
+      )
+      const preferredMeasuredX = hasNestedRenderParent ? measuredOrLayoutX : undefined
+      const preferredMeasuredY = hasNestedRenderParent ? measuredOrLayoutY : undefined
+      const baseX = preferredMeasuredX ?? explicitLeft ?? explicitMarginLeft ?? computedLeft ?? computedMarginLeft ?? measuredOrLayoutX ?? 0
+      const baseY = preferredMeasuredY ?? explicitTop ?? explicitMarginTop ?? computedTop ?? computedMarginTop ?? measuredOrLayoutY ?? 0
+      const baseXUsesMeasuredRect = preferredMeasuredX !== undefined || (
+        explicitLeft === undefined &&
+        explicitMarginLeft === undefined &&
+        computedLeft === undefined &&
+        computedMarginLeft === undefined &&
+        measuredOrLayoutX !== undefined
+      )
+      const baseYUsesMeasuredRect = preferredMeasuredY !== undefined || (
+        explicitTop === undefined &&
+        explicitMarginTop === undefined &&
+        computedTop === undefined &&
+        computedMarginTop === undefined &&
+        measuredOrLayoutY !== undefined
+      )
+      const transformX = baseXUsesMeasuredRect && measuredX !== undefined ? 0 : transformOffsets.x
+      const transformY = baseYUsesMeasuredRect && measuredY !== undefined ? 0 : transformOffsets.y
+      const baseWidth = measured.width
+        ?? parseStylePx(styleMap, 'width', nodeLabel, warnings)
+        ?? parseAttrPx(node.getAttribute('width'), 'width', nodeLabel, warnings)
+        ?? 320
+      const baseHeight = measured.height
+        ?? parseStylePx(styleMap, 'height', nodeLabel, warnings)
+        ?? parseAttrPx(node.getAttribute('height'), 'height', nodeLabel, warnings)
+
+      const extractedStyle = extractStyle(styleMap, computedStyle, warnings, nodeLabel)
+      const fallbackLocked = importMode === 'fallback' || importMode === 'root-fallback'
+      const nodeComponents                   = []
+      const pseudoForHost = pseudoByHost.get(nodeId)
+      if (pseudoForHost) {
+        nodeComponents.push(
+          ...pseudoForHost.map((entry, pseudoIndex) => ({
+            ...entry,
+            id: `import-${String(index + 1).padStart(3, '0')}-${pseudoIndex + 1}-${entry.sourceLabel?.replace(/[^a-z0-9-]/gi, '-') || 'pseudo'}`,
+          })),
+        )
+      }
+      nodeComponents.push({
+        id: 'import-' + String(index + 1).padStart(3, '0'),
+        type: inferType(node),
+        sourceLabel: fallbackLocked ? `${nodeLabel} (fallback)` : nodeLabel,
+        x: asCanonicalDimension(baseX + transformX),
+        y: asCanonicalDimension(baseY + transformY),
+        width: asCanonicalDimension(baseWidth),
+        height: asCanonicalDimensionOptional(baseHeight),
+        content,
+        style: extractedStyle,
+        locked: fallbackLocked,
+        visible: true,
+      })
+      components.push(...nodeComponents)
+    }
+
+    let canvas = {
+      width: sourceCanvasWidth,
+      height: sourceCanvasHeight,
+      ...(canvasBackground ? { background: canvasBackground } : {}),
+    }
+    const normalized = normalizeCanvasToContentBounds(components, canvas, warnings)
+    canvas = normalized.canvas
+    const normalizedComponents = normalized.components
+    const uniqueWarnings = Array.from(new Set(warnings))
+    return {
+      document: createSlideDocument({
+        canvas,
+        components: normalizedComponents,
+        warnings: uniqueWarnings,
+      }),
+      canvas,
+      components: normalizedComponents,
+      warnings: uniqueWarnings,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || 'import_parse_failed')
+    return buildFallbackImportResult(message)
+  } finally {
+    renderSnapshot.dispose()
+  }
+}
+
+// ===== html-export.ts =====
+function escapeAttribute(value        )         {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function serializeStyle(component                )         {
+  const chunks           = [
+    'position:absolute',
+    `left:${component.x}px`,
+    `top:${component.y}px`,
+    `width:${component.width}px`,
+  ]
+
+  if (typeof component.height === 'number') chunks.push(`height:${component.height}px`)
+  if (component.style.fontSize) chunks.push(`font-size:${component.style.fontSize}px`)
+  if (component.style.fontWeight) chunks.push(`font-weight:${component.style.fontWeight}`)
+  if (component.style.fontFamily) chunks.push(`font-family:${component.style.fontFamily}`)
+  if (component.style.color) chunks.push(`color:${component.style.color}`)
+  if (component.style.backgroundFill) chunks.push(`background:${component.style.backgroundFill}`)
+  if (component.style.backgroundColor) chunks.push(`background-color:${component.style.backgroundColor}`)
+  if (component.style.borderColor) chunks.push(`border-color:${component.style.borderColor}`)
+  if (component.style.borderWidth) chunks.push(`border-width:${component.style.borderWidth}px`)
+  if (component.style.borderStyle) chunks.push(`border-style:${component.style.borderStyle}`)
+  if (component.style.borderRadius) chunks.push(`border-radius:${component.style.borderRadius}px`)
+  if (component.style.boxShadow) chunks.push(`box-shadow:${component.style.boxShadow}`)
+  if (component.style.fontStyle) chunks.push(`font-style:${component.style.fontStyle}`)
+  if (component.style.lineHeight) chunks.push(`line-height:${component.style.lineHeight}px`)
+  if (component.style.textAlign) chunks.push(`text-align:${component.style.textAlign}`)
+
+  return chunks.join(';')
+}
+
+function sanitizeContent(content        )         {
+  return content
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+    .replace(/\s(href|src)\s*=\s*"javascript:[^"]*"/gi, '')
+    .replace(/\s(href|src)\s*=\s*'javascript:[^']*'/gi, '')
+}
+
+function buildPrintSafeStyles(canvas             )         {
+  const safeWidth = Number.isFinite(canvas.width) && canvas.width > 0 ? Math.max(1, Math.round(canvas.width)) : 1920
+  const safeHeight = Number.isFinite(canvas.height) && canvas.height > 0 ? Math.max(1, Math.round(canvas.height)) : 1080
+  const safeBackground =
+    typeof canvas.background === 'string' && canvas.background.trim()
+      ? canvas.background.trim()
+      : 'var(--color-bg-card)'
+
+  return [
+    '@media print{',
+    '@page{',
+    `size:${safeWidth}px ${safeHeight}px;`,
+    'margin:0;',
+    '}',
+    'html,body{',
+    'width:100%;',
+    'height:100%;',
+    'margin:0;',
+    'padding:0;',
+    `background:${safeBackground};`,
+    '}',
+    '*{',
+    'print-color-adjust:exact;',
+    '-webkit-print-color-adjust:exact;',
+    '}',
+    '.slide-canvas{',
+    'position:relative !important;',
+    'width:100% !important;',
+    'height:100% !important;',
+    'overflow:visible !important;',
+    '}',
+    '}',
+    'html,body{',
+    'width:100%;',
+    'height:100%;',
+    'margin:0;',
+    'padding:0;',
+    `background:${safeBackground};`,
+    'display:flex;',
+    'align-items:flex-start;',
+    'justify-content:flex-start;',
+    '}',
+    '.slides-export-root{',
+    'display:flex;',
+    'align-items:flex-start;',
+    'justify-content:flex-start;',
+    'width:100%;',
+    'height:100%;',
+    'overflow:hidden;',
+    `background:${safeBackground};`,
+    '}',
+    '.slide-canvas{',
+    'position:relative;',
+    `width:${safeWidth}px;`,
+    `height:${safeHeight}px;`,
+    'overflow:hidden;',
+    `background:${safeBackground};`,
+    '}',
+  ].join('')
+}
+
+function componentToHtml(component                )         {
+  const attrs = [
+    `data-component-id="${escapeAttribute(component.id)}"`,
+    `data-component-type="${escapeAttribute(component.type)}"`,
+    `data-source-label="${escapeAttribute(component.sourceLabel || component.type)}"`,
+    `style="${escapeAttribute(serializeStyle(component))}"`,
+  ]
+
+  const body = sanitizeContent(component.content || '')
+  return `<div ${attrs.join(' ')}>${body}</div>`
+}
+
+function buildRevealDeckStyles(width        , height        )         {
+  return [
+    ':root{color-scheme:light;}',
+    'html,body{margin:0;padding:0;background:var(--color-bg-page);}',
+    '.reveal{background:var(--color-bg-page);}',
+    `.reveal .slides section{width:${width}px;height:${height}px;}`,
+    '.reveal .slides section{position:relative;overflow:hidden;margin:0 auto;}',
+    '.reveal .slides section .slide-canvas{position:relative;width:100%;height:100%;overflow:hidden;}',
+    '.reveal .controls,.reveal .progress{color:var(--color-text-secondary);}',
+  ].join('')
+}
+
+function buildRevealSection(slide                                         , deck                       )         {
+  const background = slide.background?.fill || 'var(--color-bg-card)'
+  const sectionAttrs = [
+    `data-slide-root="1"`,
+    `data-oliver-slide-id="${escapeAttribute(slide.id)}"`,
+    `data-oliver-export-version="1"`,
+    `data-background-color="${escapeAttribute(background)}"`,
+  ]
+  const content = slide.elements.map(componentToHtml).join('\n')
+  return [
+    `<section ${sectionAttrs.join(' ')} style="width:${deck.width}px;height:${deck.height}px;">`,
+    `<div class="slide-canvas" style="position:relative;width:${deck.width}px;height:${deck.height}px;overflow:hidden;background:${escapeAttribute(background)};">`,
+    content,
+    '</div>',
+    '</section>',
+  ].join('\n')
+}
+
+function convertSlideComponentsToHtml(input   
+                     
+                              
+              
+                    
+                     
+                   
+                       
+   
+ )         {
+  const { canvas, components, metadata } = input
+  const slideId = metadata?.slideId || 'unsaved-slide'
+  const revision = Number.isFinite(metadata?.revision) ? String(metadata?.revision) : '0'
+  const source = metadata?.source || 'oliver-app'
+  const exportedAt = metadata?.exportedAt || new Date().toISOString()
+
+  const header = [
+    '<!doctype html>',
+    '<html>',
+    '<head>',
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    '<title>Oliver Slide Export</title>',
+    `<style>${buildPrintSafeStyles(canvas)}</style>`,
+    '</head>',
+    '<body>',
+  ].join('\n')
+  const rootOpen =
+    `<div class="slides-export-root"><div class="slide-canvas" data-slide-root="1" data-oliver-export-version="1" data-oliver-source="${escapeAttribute(source)}" data-oliver-slide-id="${escapeAttribute(slideId)}" data-oliver-revision="${escapeAttribute(revision)}" data-oliver-exported-at="${escapeAttribute(exportedAt)}" style="position:relative;width:${canvas.width}px;height:${canvas.height}px;overflow:hidden;${canvas.background ? `background:${escapeAttribute(canvas.background)};` : ''}">`
+  const body = components.map(componentToHtml).join('\n')
+  const rootClose = '</div></div>'
+  const footer = '</body></html>'
+
+  return `${header}\n${rootOpen}\n${body}\n${rootClose}\n${footer}`
+}
+
+function convertSlideDocumentToHtml(input   
+                         
+              
+                    
+                     
+                   
+                       
+   
+ )         {
+  const primarySlide = input.document.deck.slides[0]
+  const canvas              = {
+    width: input.document.deck.width,
+    height: input.document.deck.height,
+    ...(primarySlide?.background?.fill ? { background: primarySlide.background.fill } : {}),
+  }
+
+  return convertSlideComponentsToHtml({
+    canvas,
+    components: Array.isArray(primarySlide?.elements) ? primarySlide.elements : [],
+    metadata: {
+      ...input.metadata,
+      slideId: input.metadata?.slideId || primarySlide?.id || input.document.deck.id,
+    },
+  })
+}
+
+function convertSlideDocumentToRevealHtml(input   
+                         
+              
+                   
+                       
+                  
+   
+ )         {
+  const { document, metadata } = input
+  const title = metadata?.title || 'Oliver Slides Reveal Export'
+  const source = metadata?.source || 'oliver-app'
+  const exportedAt = metadata?.exportedAt || new Date().toISOString()
+  const sections = document.deck.slides.map((slide) => buildRevealSection(slide, document.deck)).join('\n')
+
+  return [
+    '<!doctype html>',
+    '<html>',
+    '<head>',
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    `<meta name="oliver-export-source" content="${escapeAttribute(source)}" />`,
+    `<meta name="oliver-exported-at" content="${escapeAttribute(exportedAt)}" />`,
+    `<title>${escapeAttribute(title)}</title>`,
+    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.css" />',
+    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/theme/white.css" />',
+    `<style>${buildRevealDeckStyles(document.deck.width, document.deck.height)}</style>`,
+    '</head>',
+    '<body>',
+    '<div class="reveal">',
+    '<div class="slides">',
+    sections,
+    '</div>',
+    '</div>',
+    '<script src="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.js"><\/script>',
+    '<script>window.Reveal&&Reveal.initialize({hash:true,controls:true,progress:true,center:false,transition:"slide"});<\/script>',
+    '</body>',
+    '</html>',
+  ].join('\n')
+}
+
+// ===== pptx-export.ts =====
+const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships'
+const P_NS = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+const SLIDE_WIDTH_EMU = 9_144_000
+const SLIDE_HEIGHT_EMU = 5_143_500
+
+                    
+           
+           
+ 
+
+// Derive PPTX slide dimensions from the canvas aspect ratio so the horizontal and
+// vertical scale factors stay equal (no stretch). The longer axis is pinned to the
+// standard 10in (9,144,000 EMU) width and the shorter axis scaled proportionally,
+// which keeps every dimension within PowerPoint's bounds. A 16:9 canvas reproduces
+// the classic 9,144,000 x 5,143,500; a 1:1 canvas yields a true square.
+function computeSlideEmu(canvasWidth        , canvasHeight        )           {
+  const w = Math.max(1, canvasWidth || SLIDE_WIDTH_EMU)
+  const h = Math.max(1, canvasHeight || SLIDE_HEIGHT_EMU)
+  if (w >= h) {
+    return { w: SLIDE_WIDTH_EMU, h: Math.round((SLIDE_WIDTH_EMU * h) / w) }
+  }
+  return { w: Math.round((SLIDE_WIDTH_EMU * w) / h), h: SLIDE_WIDTH_EMU }
+}
+
+const crcTable = (() => {
+  const table = new Uint32Array(256)
+  for (let i = 0; i < 256; i += 1) {
+    let c = i
+    for (let k = 0; k < 8; k += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1)
+    }
+    table[i] = c >>> 0
+  }
+  return table
+})()
+
+function crc32(bytes            )         {
+  let crc = 0xffffffff
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = crcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8)
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function toDosDateTime(value = new Date())                                 {
+  const year = Math.max(1980, value.getFullYear())
+  const month = value.getMonth() + 1
+  const day = value.getDate()
+  const hours = value.getHours()
+  const minutes = value.getMinutes()
+  const seconds = Math.floor(value.getSeconds() / 2)
+
+  const date = ((year - 1980) << 9) | (month << 5) | day
+  const time = (hours << 11) | (minutes << 5) | seconds
+  return { date, time }
+}
+
+function concatBytes(chunks              )             {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+  const output = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    output.set(chunk, offset)
+    offset += chunk.length
+  }
+  return output
+}
+
+function buildZipStore(entries                                           )             {
+  const encoder = new TextEncoder()
+  const locals               = []
+  const centrals               = []
+  let offset = 0
+  const dos = toDosDateTime()
+
+  for (const entry of entries) {
+    const name = encoder.encode(entry.path)
+    const data = entry.data
+    const crc = crc32(data)
+
+    const localHeader = new Uint8Array(30)
+    const localView = new DataView(localHeader.buffer)
+    localView.setUint32(0, 0x04034b50, true)
+    localView.setUint16(4, 20, true)
+    localView.setUint16(6, 0, true)
+    localView.setUint16(8, 0, true)
+    localView.setUint16(10, dos.time, true)
+    localView.setUint16(12, dos.date, true)
+    localView.setUint32(14, crc, true)
+    localView.setUint32(18, data.length, true)
+    localView.setUint32(22, data.length, true)
+    localView.setUint16(26, name.length, true)
+    localView.setUint16(28, 0, true)
+
+    const localChunk = concatBytes([localHeader, name, data])
+    locals.push(localChunk)
+
+    const centralHeader = new Uint8Array(46)
+    const centralView = new DataView(centralHeader.buffer)
+    centralView.setUint32(0, 0x02014b50, true)
+    centralView.setUint16(4, 20, true)
+    centralView.setUint16(6, 20, true)
+    centralView.setUint16(8, 0, true)
+    centralView.setUint16(10, 0, true)
+    centralView.setUint16(12, dos.time, true)
+    centralView.setUint16(14, dos.date, true)
+    centralView.setUint32(16, crc, true)
+    centralView.setUint32(20, data.length, true)
+    centralView.setUint32(24, data.length, true)
+    centralView.setUint16(28, name.length, true)
+    centralView.setUint16(30, 0, true)
+    centralView.setUint16(32, 0, true)
+    centralView.setUint16(34, 0, true)
+    centralView.setUint16(36, 0, true)
+    centralView.setUint32(38, 0, true)
+    centralView.setUint32(42, offset, true)
+
+    centrals.push(concatBytes([centralHeader, name]))
+    offset += localChunk.length
+  }
+
+  const centralSize = centrals.reduce((sum, entry) => sum + entry.length, 0)
+  const endHeader = new Uint8Array(22)
+  const endView = new DataView(endHeader.buffer)
+  endView.setUint32(0, 0x06054b50, true)
+  endView.setUint16(4, 0, true)
+  endView.setUint16(6, 0, true)
+  endView.setUint16(8, entries.length, true)
+  endView.setUint16(10, entries.length, true)
+  endView.setUint32(12, centralSize, true)
+  endView.setUint32(16, offset, true)
+  endView.setUint16(20, 0, true)
+
+  return concatBytes([...locals, ...centrals, endHeader])
+}
+
+function escXml(value        )         {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function toPlainText(html        )         {
+  const withLineBreaks = html
+    .replace(/<br\s*\/?>(\s*)/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+  const noTags = withLineBreaks.replace(/<[^>]*>/g, '')
+  return noTags
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim()
+}
+
+                       
+             
+               
+ 
+
+                              
+                    
+             
+ 
+
+                                
+                  
+                             
+ 
+
+// Standard CSS named colors -> 6-digit hex. Computed styles usually resolve to
+// rgb(), but pasted or inline-styled HTML frequently uses names like "white".
+const CSS_NAMED_COLORS                         = {
+  aliceblue: 'F0F8FF', antiquewhite: 'FAEBD7', aqua: '00FFFF', aquamarine: '7FFFD4', azure: 'F0FFFF',
+  beige: 'F5F5DC', bisque: 'FFE4C4', black: '000000', blanchedalmond: 'FFEBCD', blue: '0000FF',
+  blueviolet: '8A2BE2', brown: 'A52A2A', burlywood: 'DEB887', cadetblue: '5F9EA0', chartreuse: '7FFF00',
+  chocolate: 'D2691E', coral: 'FF7F50', cornflowerblue: '6495ED', cornsilk: 'FFF8DC', crimson: 'DC143C',
+  cyan: '00FFFF', darkblue: '00008B', darkcyan: '008B8B', darkgoldenrod: 'B8860B', darkgray: 'A9A9A9',
+  darkgreen: '006400', darkgrey: 'A9A9A9', darkkhaki: 'BDB76B', darkmagenta: '8B008B', darkolivegreen: '556B2F',
+  darkorange: 'FF8C00', darkorchid: '9932CC', darkred: '8B0000', darksalmon: 'E9967A', darkseagreen: '8FBC8F',
+  darkslateblue: '483D8B', darkslategray: '2F4F4F', darkslategrey: '2F4F4F', darkturquoise: '00CED1',
+  darkviolet: '9400D3', deeppink: 'FF1493', deepskyblue: '00BFFF', dimgray: '696969', dimgrey: '696969',
+  dodgerblue: '1E90FF', firebrick: 'B22222', floralwhite: 'FFFAF0', forestgreen: '228B22', fuchsia: 'FF00FF',
+  gainsboro: 'DCDCDC', ghostwhite: 'F8F8FF', gold: 'FFD700', goldenrod: 'DAA520', gray: '808080',
+  green: '008000', greenyellow: 'ADFF2F', grey: '808080', honeydew: 'F0FFF0', hotpink: 'FF69B4',
+  indianred: 'CD5C5C', indigo: '4B0082', ivory: 'FFFFF0', khaki: 'F0E68C', lavender: 'E6E6FA',
+  lavenderblush: 'FFF0F5', lawngreen: '7CFC00', lemonchiffon: 'FFFACD', lightblue: 'ADD8E6', lightcoral: 'F08080',
+  lightcyan: 'E0FFFF', lightgoldenrodyellow: 'FAFAD2', lightgray: 'D3D3D3', lightgreen: '90EE90', lightgrey: 'D3D3D3',
+  lightpink: 'FFB6C1', lightsalmon: 'FFA07A', lightseagreen: '20B2AA', lightskyblue: '87CEFA', lightslategray: '778899',
+  lightslategrey: '778899', lightsteelblue: 'B0C4DE', lightyellow: 'FFFFE0', lime: '00FF00', limegreen: '32CD32',
+  linen: 'FAF0E6', magenta: 'FF00FF', maroon: '800000', mediumaquamarine: '66CDAA', mediumblue: '0000CD',
+  mediumorchid: 'BA55D3', mediumpurple: '9370DB', mediumseagreen: '3CB371', mediumslateblue: '7B68EE',
+  mediumspringgreen: '00FA9A', mediumturquoise: '48D1CC', mediumvioletred: 'C71585', midnightblue: '191970',
+  mintcream: 'F5FFFA', mistyrose: 'FFE4E1', moccasin: 'FFE4B5', navajowhite: 'FFDEAD', navy: '000080',
+  oldlace: 'FDF5E6', olive: '808000', olivedrab: '6B8E23', orange: 'FFA500', orangered: 'FF4500',
+  orchid: 'DA70D6', palegoldenrod: 'EEE8AA', palegreen: '98FB98', paleturquoise: 'AFEEEE', palevioletred: 'DB7093',
+  papayawhip: 'FFEFD5', peachpuff: 'FFDAB9', peru: 'CD853F', pink: 'FFC0CB', plum: 'DDA0DD',
+  powderblue: 'B0E0E6', purple: '800080', rebeccapurple: '663399', red: 'FF0000', rosybrown: 'BC8F8F',
+  royalblue: '4169E1', saddlebrown: '8B4513', salmon: 'FA8072', sandybrown: 'F4A460', seagreen: '2E8B57',
+  seashell: 'FFF5EE', sienna: 'A0522D', silver: 'C0C0C0', skyblue: '87CEEB', slateblue: '6A5ACD',
+  slategray: '708090', slategrey: '708090', snow: 'FFFAFA', springgreen: '00FF7F', steelblue: '4682B4',
+  tan: 'D2B48C', teal: '008080', thistle: 'D8BFD8', tomato: 'FF6347', turquoise: '40E0D0',
+  violet: 'EE82EE', wheat: 'F5DEB3', white: 'FFFFFF', whitesmoke: 'F5F5F5', yellow: 'FFFF00', yellowgreen: '9ACD32',
+}
+
+function parseCssColor(value                    )                     {
+  if (!value) return null
+  const raw = value.trim().toLowerCase()
+  if (!raw) return null
+  const named = CSS_NAMED_COLORS[raw]
+  if (named) return { hex: named, alpha: 1 }
+  if (/^#[0-9a-f]{6}$/.test(raw)) return { hex: raw.slice(1).toUpperCase(), alpha: 1 }
+  if (/^#[0-9a-f]{3}$/.test(raw)) {
+    const [, r, g, b] = raw
+    return { hex: `${r}${r}${g}${g}${b}${b}`.toUpperCase(), alpha: 1 }
+  }
+  if (/^#[0-9a-f]{8}$/.test(raw)) {
+    const rgb = raw.slice(1, 7).toUpperCase()
+    const alpha = Number.parseInt(raw.slice(7), 16) / 255
+    return { hex: rgb, alpha: clamp(alpha, 0, 1) }
+  }
+  const rgbMatch = raw.match(/^rgba?\(([^,]+),\s*([^,]+),\s*([^,\)]+)(?:,\s*([^\)]+))?\)$/)
+  if (rgbMatch) {
+    const vals = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map((part) => Number.parseInt(part.trim(), 10))
+    if (!vals.every((part) => Number.isFinite(part) && part >= 0 && part <= 255)) return null
+    const alphaRaw = rgbMatch[4] ? Number.parseFloat(rgbMatch[4].trim()) : 1
+    if (!Number.isFinite(alphaRaw)) return null
+    return {
+      hex: vals.map((part) => part.toString(16).padStart(2, '0')).join('').toUpperCase(),
+      alpha: clamp(alphaRaw, 0, 1),
+    }
+  }
+  return null
+}
+
+function normalizeHexColor(value                    )                {
+  return parseCssColor(value)?.hex || null
+}
+
+function toPptAlpha(alpha        )         {
+  return clamp(Math.round(alpha * 100_000), 0, 100_000)
+}
+
+function splitCssArgs(value        )           {
+  const tokens           = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === '(') depth += 1
+    if (char === ')') depth = Math.max(0, depth - 1)
+    if (char === ',' && depth === 0) {
+      tokens.push(value.slice(start, index).trim())
+      start = index + 1
+    }
+  }
+  tokens.push(value.slice(start).trim())
+  return tokens.filter(Boolean)
+}
+
+// Map a CSS `linear-gradient` side/corner keyword (e.g. "to right", "to top left")
+// to the equivalent CSS angle in degrees (clockwise from north). Returns null if the
+// direction words are unrecognized so the caller can fall back to the default.
+function gradientKeywordToAngle(token        )                {
+  const words = token.replace(/^to\s+/, '').trim().split(/\s+/).filter(Boolean)
+  const set = new Set(words)
+  const has = (w        ) => set.has(w)
+  if (words.length === 1) {
+    if (has('top')) return 0
+    if (has('right')) return 90
+    if (has('bottom')) return 180
+    if (has('left')) return 270
+    return null
+  }
+  if (has('top') && has('right')) return 45
+  if (has('bottom') && has('right')) return 135
+  if (has('bottom') && has('left')) return 225
+  if (has('top') && has('left')) return 315
+  return null
+}
+
+function parseLinearGradient(value                    )                              {
+  if (!value) return null
+  const match = value.trim().match(/^linear-gradient\(([\s\S]+)\)$/i)
+  if (!match) return null
+  const args = splitCssArgs(match[1] || '')
+  if (args.length < 2) return null
+
+  let angleDeg = 180
+  let startIndex = 0
+  const angleToken = args[0].trim().toLowerCase()
+  if (/^-?\d*\.?\d+deg$/.test(angleToken)) {
+    angleDeg = Number.parseFloat(angleToken.replace('deg', ''))
+    startIndex = 1
+  } else if (/^to\s+/.test(angleToken)) {
+    const keywordAngle = gradientKeywordToAngle(angleToken)
+    if (keywordAngle !== null) {
+      angleDeg = keywordAngle
+      startIndex = 1
+    }
+  }
+
+  const rawStops = args.slice(startIndex)
+  const stops                       = []
+  for (let index = 0; index < rawStops.length; index += 1) {
+    const token = rawStops[index]
+    const posMatch = token.match(/(-?\d*\.?\d+)%\s*$/)
+    const colorToken = posMatch ? token.slice(0, posMatch.index).trim() : token.trim()
+    const color = parseCssColor(colorToken)
+    if (!color) continue
+    const inferredPos = rawStops.length <= 1 ? 0 : Math.round((index / (rawStops.length - 1)) * 100_000)
+    const explicitPos = posMatch ? clamp(Math.round(Number.parseFloat(posMatch[1]) * 1_000), 0, 100_000) : inferredPos
+    stops.push({ color, pos: explicitPos })
+  }
+
+  if (stops.length < 2) return null
+  return {
+    angleDeg,
+    stops,
+  }
+}
+
+function buildSolidFillXml(color             )         {
+  const alphaXml = color.alpha < 1 ? `<a:alpha val="${toPptAlpha(color.alpha)}"/>` : ''
+  return `<a:solidFill><a:srgbClr val="${color.hex}">${alphaXml}</a:srgbClr></a:solidFill>`
+}
+
+function buildGradientFillXml(gradient                      )         {
+  // CSS gradient angle is clockwise from north; PPTX ang is clockwise from east
+  const angle = (((gradient.angleDeg - 90) % 360) + 360) % 360
+  const pptAngle = Math.round(angle * 60_000)
+  const stops = gradient.stops.map((stop) => {
+    const alphaXml = stop.color.alpha < 1 ? `<a:alpha val="${toPptAlpha(stop.color.alpha)}"/>` : ''
+    return `<a:gs pos="${stop.pos}"><a:srgbClr val="${stop.color.hex}">${alphaXml}</a:srgbClr></a:gs>`
+  }).join('')
+  return `<a:gradFill rotWithShape="1"><a:gsLst>${stops}</a:gsLst><a:lin ang="${pptAngle}" scaled="1"/></a:gradFill>`
+}
+
+function toEmu(px        , scale        )         {
+  return Math.max(0, Math.round(px * scale))
+}
+
+function clamp(value        , min        , max        )         {
+  return Math.min(max, Math.max(min, value))
+}
+
+function fontSizeForComponent(component                )         {
+  if (typeof component.style.fontSize === 'number' && component.style.fontSize > 0) {
+    return component.style.fontSize
+  }
+  if (component.type === 'heading') return 54
+  if (component.type === 'subheading') return 36
+  if (component.type === 'stat') return 40
+  return 24
+}
+
+function defaultHeightForComponent(component                , text        )         {
+  if (typeof component.height === 'number' && component.height > 0) return component.height
+  const lines = Math.max(1, text.split('\n').length)
+  const estimated = Math.ceil(fontSizeForComponent(component) * 1.4 * lines + 18)
+  return clamp(estimated, 40, 800)
+}
+
+function resolveTypeface(fontFamily                    )         {
+  if (!fontFamily) return 'Arial'
+  const token = fontFamily.split(',')[0]?.trim().replace(/^['"]|['"]$/g, '')
+  return token || 'Arial'
+}
+
+function buildTextParagraphs(
+  text        ,
+  fontSizePt        ,
+  textColorHex        ,
+  align        ,
+  bold         ,
+  italic         ,
+  typeface        ,
+)         {
+  const lines = text.split('\n')
+  // fontSizePt arrives as CSS px; PPTX sz is hundredths of a point (px * 0.75 = pt)
+  const size = Math.round(clamp(fontSizePt * 0.75, 8, 120) * 100)
+  const boldAttr = bold ? ' b="1"' : ''
+  const italicAttr = italic ? ' i="1"' : ''
+
+  return lines
+    .map((line) => {
+      const content = line.trim().length > 0 ? line : ' '
+      return `<a:p><a:pPr algn="${align}"/><a:r><a:rPr lang="en-US" sz="${size}"${boldAttr}${italicAttr}><a:solidFill><a:srgbClr val="${textColorHex}"/></a:solidFill><a:latin typeface="${escXml(typeface)}"/></a:rPr><a:t>${escXml(content)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${size}"/></a:p>`
+    })
+    .join('')
+}
+
+function parseBoxShadow(value                    )                                                                    {
+  if (!value) return null
+  const candidates = splitCssArgs(value)
+  for (const candidate of candidates) {
+    if (!candidate || /\binset\b/i.test(candidate)) continue
+    const colorMatch = candidate.match(/(rgba?\([^\)]*\)|#[0-9a-fA-F]{3,8})/)
+    const color = parseCssColor(colorMatch?.[1])
+    if (!color) continue
+    const clean = candidate.replace(colorMatch?.[1] || '', ' ')
+    const lengths = clean.match(/-?\d*\.?\d+px/g) || []
+    if (lengths.length < 2) continue
+    const xToken = lengths[0]
+    const yToken = lengths[1]
+    if (!xToken || !yToken) continue
+    const x = Number.parseFloat(xToken.replace('px', ''))
+    const y = Number.parseFloat(yToken.replace('px', ''))
+    const blur = lengths[2] ? Math.max(0, Number.parseFloat(lengths[2].replace('px', ''))) : 0
+    if (![x, y, blur].every((entry) => Number.isFinite(entry))) continue
+    return { x, y, blur, color }
+  }
+  return null
+}
+
+function buildLineXml(component                )         {
+  const borderWidth = typeof component.style.borderWidth === 'number' && component.style.borderWidth > 0
+    ? component.style.borderWidth
+    : 0
+  const borderColor = parseCssColor(component.style.borderColor)
+  if (borderWidth <= 0 || !borderColor) return '<a:ln><a:noFill/></a:ln>'
+
+  const dash = component.style.borderStyle && /dashed|dotted/i.test(component.style.borderStyle)
+    ? '<a:prstDash val="sysDot"/>'
+    : ''
+  return `<a:ln w="${toEmu(borderWidth, 9_525)}"><a:solidFill><a:srgbClr val="${borderColor.hex}">${borderColor.alpha < 1 ? `<a:alpha val="${toPptAlpha(borderColor.alpha)}"/>` : ''}</a:srgbClr></a:solidFill>${dash}</a:ln>`
+}
+
+function buildShapeFillXml(component                , hasDefaultFill         , warnings          , warningPrefix        )         {
+  const backgroundFill = component.style.backgroundFill || component.style.backgroundColor
+  const gradient = parseLinearGradient(backgroundFill)
+  if (gradient) return buildGradientFillXml(gradient)
+
+  if (typeof backgroundFill === 'string' && /gradient\(/i.test(backgroundFill)) {
+    warnings.push(`${warningPrefix}: unsupported gradient syntax was simplified to a solid fill.`)
+  }
+
+  const solidColor = parseCssColor(backgroundFill) || parseCssColor(component.style.backgroundColor)
+  if (solidColor) return buildSolidFillXml(solidColor)
+  if (hasDefaultFill) return '<a:solidFill><a:srgbClr val="F3F4F6"/></a:solidFill>'
+  return '<a:noFill/>'
+}
+
+function base64ToBytes(base64        )             {
+  const clean = base64.replace(/\s/g, '')
+  const binary = atob(clean)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+const IMAGE_MIME_EXT                         = {
+  'image/png': 'png',
+  'image/jpeg': 'jpeg',
+  'image/jpg': 'jpeg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+}
+
+                        
+             
+                   
+ 
+
+function decodeDataUriImage(uri        , warnings          , ref        )                      {
+  const match = uri.match(/^data:([^;,]+)(;base64)?,([\s\S]*)$/i)
+  if (!match) return null
+  const mime = (match[1] || '').toLowerCase()
+  const ext = IMAGE_MIME_EXT[mime]
+  if (!ext) {
+    warnings.push(`${ref}: embedded image type "${mime || 'unknown'}" is not supported for PPTX and was skipped.`)
+    return null
+  }
+  try {
+    const bytes = match[2]
+      ? base64ToBytes(match[3] || '')
+      : new TextEncoder().encode(decodeURIComponent(match[3] || ''))
+    if (bytes.length === 0) return null
+    return { ext, bytes }
+  } catch {
+    warnings.push(`${ref}: embedded image data could not be decoded and was skipped.`)
+    return null
+  }
+}
+
+function extractComponentImageUri(component                )                {
+  const content = component.content || ''
+  const imgMatch = content.match(/<img\b[^>]*?\bsrc\s*=\s*["']?(data:[^"'\s>]+)/i)
+  if (imgMatch) return imgMatch[1]
+  const backgroundFill = component.style.backgroundFill || ''
+  const urlMatch = backgroundFill.match(/url\(\s*["']?(data:[^)"']+?)["']?\s*\)/i)
+  if (urlMatch) return urlMatch[1]
+  return null
+}
+
+function stripImageMarkup(content        )         {
+  return content.replace(/<img\b[^>]*>/gi, '')
+}
+
+function buildPicXml(
+  component                ,
+  shapeId        ,
+  relId        ,
+  x        ,
+  y        ,
+  w        ,
+  h        ,
+)         {
+  const name = escXml(`image-${component.id}`)
+  return `<p:pic><p:nvPicPr><p:cNvPr id="${shapeId}" name="${name}"/><p:cNvPicPr><a:picLocks noChangeAspect="0"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`
+}
+
+function buildShapeXml(
+  component                ,
+  shapeId        ,
+  scaleX        ,
+  scaleY        ,
+  slideRef        ,
+  warnings          ,
+)         {
+  const text = toPlainText(component.content || '')
+  const hasBackground = !!(component.style.backgroundFill || component.style.backgroundColor)
+  const hasBorder = !!(component.style.borderColor && component.style.borderWidth && component.style.borderWidth > 0)
+  const hasShadow = !!component.style.boxShadow
+  if (!text && !hasBackground && !hasBorder && !hasShadow) {
+    warnings.push(`${slideRef}: component ${component.id} skipped because it contains no text content.`)
+    return ''
+  }
+
+  const x = toEmu(component.x, scaleX)
+  const y = toEmu(component.y, scaleY)
+  const w = toEmu(component.width, scaleX)
+  const h = toEmu(defaultHeightForComponent(component, text), scaleY)
+
+  const textColorHex = normalizeHexColor(component.style.color) || '111111'
+  const hasDefaultFill = ['card', 'panel', 'row', 'stat'].includes(component.type)
+  const align = component.style.textAlign === 'center'
+    ? 'ctr'
+    : component.style.textAlign === 'right'
+      ? 'r'
+      : component.style.textAlign === 'justify'
+        ? 'just'
+        : 'l'
+  const fontSize = fontSizeForComponent(component)
+  const bold = (component.style.fontWeight || 0) >= 600 || component.type === 'heading'
+  const italic = component.style.fontStyle === 'italic'
+  const cornerRadius = typeof component.style.borderRadius === 'number' ? component.style.borderRadius : 0
+  const shapeGeom = ['card', 'panel'].includes(component.type) || cornerRadius > 1 ? 'roundRect' : 'rect'
+  const fillXml = buildShapeFillXml(component, hasDefaultFill, warnings, `${slideRef}: component ${component.id} (${component.type})`)
+  const lineXml = buildLineXml(component)
+  const shadow = parseBoxShadow(component.style.boxShadow)
+  const shadowXml = shadow
+    ? `<a:effectLst><a:outerShdw blurRad="${toEmu(shadow.blur, 9_525)}" dist="${toEmu(Math.hypot(shadow.x, shadow.y), 9_525)}" dir="${Math.round((((Math.atan2(shadow.y, shadow.x) * 180) / Math.PI) + 360) % 360 * 60_000)}" algn="ctr" rotWithShape="0"><a:srgbClr val="${shadow.color.hex}">${shadow.color.alpha < 1 ? `<a:alpha val="${toPptAlpha(shadow.color.alpha)}"/>` : ''}</a:srgbClr></a:outerShdw></a:effectLst>`
+    : ''
+  const typeface = resolveTypeface(component.style.fontFamily)
+
+  const spPr = `<p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="${shapeGeom}"><a:avLst/></a:prstGeom>${fillXml}${lineXml}${shadowXml}</p:spPr>`
+  const txBody = `<p:txBody><a:bodyPr wrap="square"/><a:lstStyle/>${buildTextParagraphs(text || component.type, fontSize, textColorHex, align, bold, italic, typeface)}</p:txBody>`
+
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${escXml(component.type + '-' + component.id)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>${spPr}${txBody}</p:sp>`
+}
+
+                          
+             
+                 
+ 
+
+function buildSlideXml(
+  slide                      ,
+  slideIndex        ,
+  warnings          ,
+  media                                           ,
+  slideEmu          ,
+)                 {
+  const safeWidth = Math.max(1, slide.canvas.width || 1920)
+  const safeHeight = Math.max(1, slide.canvas.height || 1080)
+  const scaleX = slideEmu.w / safeWidth
+  const scaleY = slideEmu.h / safeHeight
+  const slideRef = `slide ${slideIndex + 1} (${slide.title || slide.id})`
+
+  const shapes           = []
+  const imageRels                                         = []
+  let shapeId = 2
+  let relCounter = 2 // rId1 is reserved for the slide-layout relationship
+
+  const registerImage = (image              )         => {
+    const globalIndex = media.length + 1
+    media.push({ path: `ppt/media/image${globalIndex}.${image.ext}`, data: image.bytes })
+    const rId = `rId${relCounter}`
+    relCounter += 1
+    imageRels.push({ rId, target: `../media/image${globalIndex}.${image.ext}` })
+    return rId
+  }
+
+  const canvasGradient = parseLinearGradient(slide.canvas.background)
+  const canvasColor = parseCssColor(slide.canvas.background)
+  if (canvasGradient || canvasColor) {
+    const fillXml = canvasGradient
+      ? buildGradientFillXml(canvasGradient)
+      : buildSolidFillXml(canvasColor               )
+    const bg = `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="slide-background"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${slideEmu.w}" cy="${slideEmu.h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${fillXml}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`
+    shapes.push(bg)
+    shapeId += 1
+  }
+
+  for (const component of slide.components) {
+    if (component.visible === false) {
+      warnings.push(`${slideRef}: component ${component.id} (${component.type}) was hidden and was skipped in PPTX export.`)
+      continue
+    }
+
+    const componentRef = `${slideRef}: component ${component.id} (${component.type})`
+    const imageUri = extractComponentImageUri(component)
+    if (imageUri) {
+      const decoded = decodeDataUriImage(imageUri, warnings, componentRef)
+      if (decoded) {
+        const rId = registerImage(decoded)
+        const x = toEmu(component.x, scaleX)
+        const y = toEmu(component.y, scaleY)
+        const w = toEmu(component.width, scaleX)
+        const imageHeight = typeof component.height === 'number' && component.height > 0 ? component.height : component.width
+        const h = toEmu(imageHeight, scaleY)
+        shapes.push(buildPicXml(component, shapeId, rId, x, y, w, h))
+        shapeId += 1
+
+        // A component may carry both an image and a caption. Emit the caption as a
+        // transparent text shape on top so the picture stays visible beneath it:
+        // retype to 'text' and clear the fill so buildShapeXml produces noFill
+        // (card/panel/row/stat would otherwise paint an opaque default fill).
+        const captionContent = stripImageMarkup(component.content || '')
+        if (toPlainText(captionContent)) {
+          const captionShape = buildShapeXml(
+            { ...component, type: 'text', content: captionContent, style: { ...component.style, backgroundFill: undefined, backgroundColor: undefined } },
+            shapeId,
+            scaleX,
+            scaleY,
+            slideRef,
+            warnings,
+          )
+          if (captionShape) {
+            shapes.push(captionShape)
+            shapeId += 1
+          }
+        }
+        continue
+      }
+      // Decoding failed and already warned. An image-only logo has nothing else to
+      // render, so skip it rather than falling through to an empty text shape.
+      if (component.type === 'logo') continue
+      // Otherwise fall through: the component may still have text/background/border.
+    } else if (component.type === 'logo') {
+      warnings.push(`${componentRef} had no embeddable image data and was skipped.`)
+      continue
+    }
+
+    const shapeXml = buildShapeXml(component, shapeId, scaleX, scaleY, slideRef, warnings)
+    if (!shapeXml) continue
+    shapes.push(shapeXml)
+    shapeId += 1
+  }
+
+  if (shapes.length === 0) {
+    const fallback = `<p:sp><p:nvSpPr><p:cNvPr id="2" name="fallback-note"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="457200" y="457200"/><a:ext cx="8229600" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"><a:solidFill><a:srgbClr val="666666"/></a:solidFill><a:latin typeface="Arial"/></a:rPr><a:t>${escXml('This slide had no exportable native components.')}</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`
+    shapes.push(fallback)
+    warnings.push(`${slideRef}: no exportable components found; added fallback note.`)
+  }
+
+  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sld xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes.join('')}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`
+  return { xml, relsXml: buildSlideRelsXml(imageRels) }
+}
+
+const IMAGE_EXT_CONTENT_TYPE                         = {
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+}
+
+function buildContentTypesXml(slideCount        , imageExtensions           = [])         {
+  const slideOverrides = Array.from({ length: slideCount }, (_, index) =>
+    `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
+  ).join('')
+
+  const imageDefaults = Array.from(new Set(imageExtensions))
+    .map((ext) => `<Default Extension="${ext}" ContentType="${IMAGE_EXT_CONTENT_TYPE[ext] || 'application/octet-stream'}"/>`)
+    .join('')
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>${slideOverrides}</Types>`
+}
+
+function buildPresentationXml(slideCount        , slideEmu          )         {
+  const slideIds = Array.from({ length: slideCount }, (_, index) =>
+    `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`,
+  ).join('')
+
+  // Emit the type hint only for the exact 16:9 ratio; for any other size cx/cy are
+  // authoritative and a mismatched type hint would confuse PowerPoint.
+  const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
+  const sizeType = isScreen16x9 ? ' type="screen16x9"' : ''
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:presentation xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="${slideEmu.w}" cy="${slideEmu.h}"${sizeType}/><p:notesSz cx="6858000" cy="9144000"/><p:defaultTextStyle/></p:presentation>`
+}
+
+function buildPresentationRelsXml(slideCount        )         {
+  const slideRels = Array.from({ length: slideCount }, (_, index) =>
+    `<Relationship Id="rId${index + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`,
+  ).join('')
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>${slideRels}</Relationships>`
+}
+
+function buildRootRelsXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`
+}
+
+function buildSlideMasterXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sldMaster xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:cSld name="Master"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>`
+}
+
+function buildSlideMasterRelsXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/></Relationships>`
+}
+
+function buildSlideLayoutXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sldLayout xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}" type="blank" preserve="1"><p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`
+}
+
+function buildSlideLayoutRelsXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>`
+}
+
+function buildThemeXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<a:theme xmlns:a="${A_NS}" name="Oliver Theme"><a:themeElements><a:clrScheme name="Oliver"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F2937"/></a:dk2><a:lt2><a:srgbClr val="F9FAFB"/></a:lt2><a:accent1><a:srgbClr val="EC4899"/></a:accent1><a:accent2><a:srgbClr val="3B82F6"/></a:accent2><a:accent3><a:srgbClr val="10B981"/></a:accent3><a:accent4><a:srgbClr val="F59E0B"/></a:accent4><a:accent5><a:srgbClr val="8B5CF6"/></a:accent5><a:accent6><a:srgbClr val="EF4444"/></a:accent6><a:hlink><a:srgbClr val="2563EB"/></a:hlink><a:folHlink><a:srgbClr val="7C3AED"/></a:folHlink></a:clrScheme><a:fontScheme name="Oliver"><a:majorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme><a:fmtScheme name="Oliver"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>`
+}
+
+function buildSlideRelsXml(imageRels                                         = [])         {
+  const imageRelXml = imageRels
+    .map((rel) => `<Relationship Id="${rel.rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${rel.target}"/>`)
+    .join('')
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>${imageRelXml}</Relationships>`
+}
+
+function buildAppPropsXml(slideCount        , slideEmu          )         {
+  const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
+  const presentationFormat = isScreen16x9 ? 'Widescreen' : 'Custom'
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Oliver App</Application><Slides>${slideCount}</Slides><PresentationFormat>${presentationFormat}</PresentationFormat></Properties>`
+}
+
+function buildCorePropsXml()         {
+  const iso = new Date().toISOString()
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Oliver Slide Export</dc:title><dc:creator>Oliver App</dc:creator><cp:lastModifiedBy>Oliver App</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${iso}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${iso}</dcterms:modified></cp:coreProperties>`
+}
+
+function convertSlidesToPptx(slidesInput                        )                        {
+  if (!Array.isArray(slidesInput) || slidesInput.length === 0) {
+    throw new Error('At least one slide is required for PPTX export.')
+  }
+
+  const slides = slidesInput.map((slide) => ({
+    ...slide,
+    title: slide.title || slide.id,
+    canvas: {
+      width: Math.max(1, Number(slide.canvas?.width || 1920)),
+      height: Math.max(1, Number(slide.canvas?.height || 1080)),
+      ...(typeof slide.canvas?.background === 'string' && slide.canvas.background.trim()
+        ? { background: slide.canvas.background.trim() }
+        : {}),
+    },
+    components: Array.isArray(slide.components) ? slide.components : [],
+  }))
+
+  const warnings           = []
+  const encoder = new TextEncoder()
+  const entries                                            = []
+
+  // Build slides first so embedded-image media parts and their content-type
+  // Defaults are known before [Content_Types].xml is written. ZIP entry order
+  // is not significant, so the manifest can be pushed after the slide loop.
+  // Slide size is presentation-level (one size for all slides); derive it from the
+  // first slide's canvas, which reflects the chosen 16:9 / 1:1 preset for the deck.
+  const slideEmu = computeSlideEmu(slides[0].canvas.width, slides[0].canvas.height)
+
+  const media                                            = []
+  const slideEntries                                            = []
+  slides.forEach((slide, index) => {
+    const { xml, relsXml } = buildSlideXml(slide, index, warnings, media, slideEmu)
+    slideEntries.push({ path: `ppt/slides/slide${index + 1}.xml`, data: encoder.encode(xml) })
+    slideEntries.push({ path: `ppt/slides/_rels/slide${index + 1}.xml.rels`, data: encoder.encode(relsXml) })
+  })
+  const imageExtensions = media.map((entry) => entry.path.slice(entry.path.lastIndexOf('.') + 1))
+
+  entries.push({ path: '[Content_Types].xml', data: encoder.encode(buildContentTypesXml(slides.length, imageExtensions)) })
+  entries.push({ path: '_rels/.rels', data: encoder.encode(buildRootRelsXml()) })
+  entries.push({ path: 'docProps/app.xml', data: encoder.encode(buildAppPropsXml(slides.length, slideEmu)) })
+  entries.push({ path: 'docProps/core.xml', data: encoder.encode(buildCorePropsXml()) })
+  entries.push({ path: 'ppt/presentation.xml', data: encoder.encode(buildPresentationXml(slides.length, slideEmu)) })
+  entries.push({ path: 'ppt/_rels/presentation.xml.rels', data: encoder.encode(buildPresentationRelsXml(slides.length)) })
+  entries.push({ path: 'ppt/slideMasters/slideMaster1.xml', data: encoder.encode(buildSlideMasterXml()) })
+  entries.push({ path: 'ppt/slideMasters/_rels/slideMaster1.xml.rels', data: encoder.encode(buildSlideMasterRelsXml()) })
+  entries.push({ path: 'ppt/slideLayouts/slideLayout1.xml', data: encoder.encode(buildSlideLayoutXml()) })
+  entries.push({ path: 'ppt/slideLayouts/_rels/slideLayout1.xml.rels', data: encoder.encode(buildSlideLayoutRelsXml()) })
+  entries.push({ path: 'ppt/theme/theme1.xml', data: encoder.encode(buildThemeXml()) })
+
+  entries.push(...slideEntries)
+  for (const entry of media) entries.push(entry)
+
+  const zipBytes = buildZipStore(entries)
+  const zipBuffer = new ArrayBuffer(zipBytes.byteLength)
+  new Uint8Array(zipBuffer).set(zipBytes)
+  const blob = new Blob([zipBuffer], { type: PPTX_MIME })
+  return {
+    blob,
+    warnings,
+    slideCount: slides.length,
+  }
+}
+
+function convertSlideDocumentsToPptx(slidesInput                                )                        {
+  return convertSlidesToPptx(slidesInput.map((slide) => {
+    const primarySlide = slide.document.deck.slides[0]
+    return {
+      id: slide.id,
+      title: slide.title,
+      canvas: {
+        width: slide.document.deck.width,
+        height: slide.document.deck.height,
+        ...(primarySlide?.background?.fill ? { background: primarySlide.background.fill } : {}),
+      },
+      components: Array.isArray(primarySlide?.elements) ? primarySlide.elements : [],
+    }
+  }))
+}
+
+// ===== import-file-bundle.ts =====
+const STYLESHEET_LINK_SELECTOR = 'link[rel~="stylesheet"][href]'
+
+function isHtmlImportFile(file      )          {
+  const name = file.name.toLowerCase()
+  const type = file.type.toLowerCase()
+  return name.endsWith('.html') || name.endsWith('.htm') || type.includes('text/html')
+}
+
+function isCssImportFile(file      )          {
+  const name = file.name.toLowerCase()
+  const type = file.type.toLowerCase()
+  return name.endsWith('.css') || type.includes('text/css')
+}
+
+function decodeSafe(value        )         {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function stylesheetLookupKey(rawHref        )         {
+  const normalized = rawHref.trim().replace(/\\/g, '/')
+  const withoutHash = normalized.split('#')[0]
+  const withoutQuery = withoutHash.split('?')[0]
+  const parts = withoutQuery.split('/').filter(Boolean)
+  const tail = parts[parts.length - 1] || withoutQuery
+  return decodeSafe(tail).trim().toLowerCase()
+}
+
+function isRemoteStylesheetHref(rawHref        )          {
+  const value = rawHref.trim().toLowerCase()
+  return value.startsWith('http://')
+    || value.startsWith('https://')
+    || value.startsWith('//')
+    || value.startsWith('data:')
+    || value.startsWith('blob:')
+}
+
+                                           
+                       
+                  
+ 
+
+                                                  
+              
+                        
+                           
+                           
+ 
+
+function selectImportFiles(files        )                           {
+  const htmlFile = files.find((file) => isHtmlImportFile(file)) || null
+  const cssFiles = files.filter((file) => file !== htmlFile && isCssImportFile(file))
+  return {
+    htmlFile,
+    cssFiles,
+  }
+}
+
+async function inlineCompanionStylesheets(
+  html        ,
+  cssFiles        ,
+)                                           {
+  if (!cssFiles.length) {
+    return {
+      html,
+      inlinedHrefs: [],
+      unresolvedHrefs: [],
+      ignoredCssFiles: [],
+    }
+  }
+
+  const ignoredCssFiles           = []
+  const cssByName = new Map                ()
+  const loadableCssFiles = cssFiles.filter((file) => {
+    if (file.size > MAX_IMPORT_FILE_SIZE_BYTES) {
+      ignoredCssFiles.push(file.name)
+      return false
+    }
+    return true
+  })
+
+  for (const file of loadableCssFiles) {
+    cssByName.set(file.name.toLowerCase(), await file.text())
+  }
+
+  if (cssByName.size === 0) {
+    return {
+      html,
+      inlinedHrefs: [],
+      unresolvedHrefs: [],
+      ignoredCssFiles,
+    }
+  }
+
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+  const inlinedHrefs           = []
+  const unresolvedHrefs           = []
+  let hasChanges = false
+
+  for (const link of Array.from(doc.querySelectorAll                 (STYLESHEET_LINK_SELECTOR))) {
+    const href = (link.getAttribute('href') || '').trim()
+    if (!href || isRemoteStylesheetHref(href)) continue
+
+    const lookupKey = stylesheetLookupKey(href)
+    if (!lookupKey) continue
+
+    const cssText = cssByName.get(lookupKey)
+    if (!cssText) {
+      unresolvedHrefs.push(href)
+      continue
+    }
+
+    const styleElement = doc.createElement('style')
+    styleElement.setAttribute('data-import-companion-href', href)
+    styleElement.textContent = cssText
+    link.replaceWith(styleElement)
+    inlinedHrefs.push(href)
+    hasChanges = true
+  }
+
+  return {
+    html: hasChanges ? (doc.documentElement?.outerHTML || html) : html,
+    inlinedHrefs: Array.from(new Set(inlinedHrefs)),
+    unresolvedHrefs: Array.from(new Set(unresolvedHrefs)),
+    ignoredCssFiles: Array.from(new Set(ignoredCssFiles)),
+  }
+}
+
+  global.SlideEngine = {
+    convertHtmlToSlideComponents,
+    convertSlideComponentsToHtml,
+    convertSlideDocumentToHtml,
+    convertSlideDocumentsToPptx,
+    createSlideDocument,
+    validateImportFile,
+    validateHtmlImportInput,
+    validatePastedHtml,
+    validateParsedResult,
+    classifyImportError,
+    selectImportFiles,
+    inlineCompanionStylesheets,
+    adaptComponentsToResponsiveCanvasWithWarnings,
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+
+<script>
+(function () {
+  'use strict';
+  const E = window.SlideEngine;
+  const PRESETS = { '16-9': { width: 1920, height: 1080 }, '1-1': { width: 1080, height: 1080 } };
+  const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+
+  const state = {
+    preset: '16-9',
+    canvas: { width: 1920, height: 1080, background: undefined },
+    components: [],
+    highlightId: null,
+    title: 'Slide',
+  };
+
+  const $ = (sel) => document.querySelector(sel);
+  const canvasEl = $('#canvas');
+  const wrapEl = $('#canvasWrap');
+  const stageEl = $('#stage');
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function toast(msg, warnings) {
+    const t = $('#toast');
+    t.className = 'show' + (warnings && warnings.length ? ' warn' : '');
+    let html = escapeHtml(msg);
+    if (warnings && warnings.length) html += '<ul class="warnlist">' + warnings.slice(0, 12).map((w) => '<li>' + escapeHtml(w) + '</li>').join('') + '</ul>';
+    t.innerHTML = html;
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { t.className = ''; }, warnings && warnings.length ? 9000 : 4000);
+  }
+  // Defense-in-depth for the preview render. The engine already rebuilds component
+  // content via DOMParser and renders imports in a sandboxed script-less iframe, so
+  // injected handlers never survive to here; this strips quoted, single-quoted, and
+  // unquoted on*/javascript: forms anyway in case content ever arrives raw.
+  function sanitize(html) {
+    return String(html)
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<script\b[^>]*>/gi, '')
+      .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+      .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+      .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
+      .replace(/\s(href|src)\s*=\s*"javascript:[^"]*"/gi, '')
+      .replace(/\s(href|src)\s*=\s*'javascript:[^']*'/gi, '')
+      .replace(/\s(href|src)\s*=\s*javascript:[^\s>]+/gi, '');
+  }
+
+  // A component is an image layer if its content is an <img> or it has an image fill.
+  function isImageComponent(c) {
+    if (/<img\b/i.test(c.content || '')) return true;
+    const fill = (c.style && c.style.backgroundFill) || '';
+    return /url\(/i.test(fill);
+  }
+
+  // ---- Preview (read-only) ----
+  function fitScale() {
+    const pad = 48;
+    const scale = Math.min((stageEl.clientWidth - pad) / state.canvas.width, (stageEl.clientHeight - pad) / state.canvas.height, 1);
+    canvasEl.style.width = state.canvas.width + 'px';
+    canvasEl.style.height = state.canvas.height + 'px';
+    canvasEl.style.transform = 'scale(' + scale + ')';
+    wrapEl.style.width = state.canvas.width * scale + 'px';
+    wrapEl.style.height = state.canvas.height * scale + 'px';
+  }
+  function componentInlineStyle(c) {
+    const s = c.style || {};
+    const p = [];
+    if (s.fontSize) p.push('font-size:' + s.fontSize + 'px');
+    if (s.fontWeight) p.push('font-weight:' + s.fontWeight);
+    if (s.fontFamily) p.push('font-family:' + s.fontFamily);
+    if (s.color) p.push('color:' + s.color);
+    if (s.backgroundFill) p.push('background:' + s.backgroundFill);
+    else if (s.backgroundColor) p.push('background-color:' + s.backgroundColor);
+    if (s.borderColor && s.borderWidth) p.push('border:' + s.borderWidth + 'px ' + (s.borderStyle || 'solid') + ' ' + s.borderColor);
+    if (s.borderRadius) p.push('border-radius:' + s.borderRadius + 'px');
+    if (s.boxShadow) p.push('box-shadow:' + s.boxShadow);
+    if (s.fontStyle) p.push('font-style:' + s.fontStyle);
+    if (s.lineHeight) p.push('line-height:' + s.lineHeight + 'px');
+    if (s.textAlign) p.push('text-align:' + s.textAlign);
+    return p.join(';');
+  }
+  function renderPreview() {
+    const has = state.components.length > 0;
+    $('#empty').style.display = has ? 'none' : 'block';
+    wrapEl.style.display = has ? 'block' : 'none';
+    $('#exportPptxBtn').disabled = !has;
+    $('#exportHtmlBtn').disabled = !has;
+    if (!has) { renderInspector(); return; }
+    fitScale();
+    canvasEl.style.background = state.canvas.background || '#ffffff';
+    canvasEl.innerHTML = '';
+    for (const c of state.components) {
+      if (c.visible === false) continue;
+      const el = document.createElement('div');
+      el.className = 'comp';
+      el.style.left = c.x + 'px';
+      el.style.top = c.y + 'px';
+      el.style.width = c.width + 'px';
+      if (typeof c.height === 'number') el.style.height = c.height + 'px';
+      el.style.cssText += ';' + componentInlineStyle(c);
+      el.innerHTML = sanitize(c.content || '');
+      canvasEl.appendChild(el);
+    }
+    drawHighlight();
+    renderInspector();
+  }
+  function drawHighlight() {
+    const old = canvasEl.querySelector('.selbox');
+    if (old) old.remove();
+    const c = state.components.find((x) => x.id === state.highlightId && x.visible !== false);
+    if (!c) return;
+    const ov = document.createElement('div');
+    ov.className = 'selbox';
+    ov.style.left = c.x + 'px'; ov.style.top = c.y + 'px';
+    ov.style.width = c.width + 'px';
+    ov.style.height = (typeof c.height === 'number' ? c.height : 40) + 'px';
+    canvasEl.appendChild(ov);
+  }
+
+  // ---- Layer list (read-only) ----
+  function renderInspector() {
+    const box = $('#inspector');
+    if (!state.components.length) { box.innerHTML = '<div class="empty-note">No slide loaded yet.</div>'; return; }
+    const imgCount = state.components.filter(isImageComponent).length;
+    const textCount = state.components.length - imgCount;
+    const rows = state.components.map((c) => {
+      const img = isImageComponent(c);
+      const name = escapeHtml(c.sourceLabel || c.type || 'layer');
+      const dim = Math.round(c.width) + '×' + Math.round(c.height || 0);
+      return '<li class="layer' + (c.id === state.highlightId ? ' active' : '') + '" data-id="' + escapeHtml(c.id) + '">' +
+        '<span class="tag ' + (img ? 'image' : 'text') + '">' + (img ? 'img' : 'text') + '</span>' +
+        '<span class="name">' + name + '</span><span class="dim">' + dim + '</span></li>';
+    }).join('');
+    box.innerHTML =
+      '<div><h2>Converted layers</h2><div class="summary">' +
+        '<div class="pill text"><div class="n">' + textCount + '</div><div class="l">text boxes</div></div>' +
+        '<div class="pill image"><div class="n">' + imgCount + '</div><div class="l">picture / shape</div></div>' +
+      '</div></div>' +
+      '<div><h2>Layers</h2><ul class="layers">' + rows + '</ul></div>';
+    box.querySelectorAll('.layer').forEach((li) => li.addEventListener('click', () => {
+      state.highlightId = (state.highlightId === li.dataset.id) ? null : li.dataset.id;
+      drawHighlight();
+      renderInspector();
+    }));
+  }
+
+  // ---- Import ----
+  async function importFromHtml(html, cssFiles) {
+    if (!html || !html.trim()) { toast('Nothing to import — the HTML was empty.'); return; }
+    const inputCheck = E.validateHtmlImportInput(html);
+    if (inputCheck) { toast('Import failed: ' + inputCheck.message); return; }
+    try {
+      let effectiveHtml = html;
+      if (cssFiles && cssFiles.length) {
+        const bundled = await E.inlineCompanionStylesheets(html, cssFiles);
+        effectiveHtml = bundled.html;
+      }
+      const result = await E.convertHtmlToSlideComponents(effectiveHtml);
+      state.components = result.components || [];
+      const c = result.canvas || {};
+      state.canvas = { width: c.width || state.canvas.width, height: c.height || state.canvas.height, background: c.background };
+      applyPreset(state.preset, true);
+      state.highlightId = null;
+      renderPreview();
+      const parseCheck = E.validateParsedResult(result);
+      const warnings = result.warnings || [];
+      if (parseCheck) toast('Converted, but: ' + parseCheck.message, warnings);
+      else toast('Converted ' + state.components.length + ' layer(s).', warnings);
+    } catch (err) {
+      const info = E.classifyImportError(err);
+      toast('Import failed: ' + info.message);
+    }
+  }
+
+  function readAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error || new Error('read failed'));
+      r.readAsDataURL(file);
+    });
+  }
+  function naturalSize(dataUrl) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ w: img.naturalWidth || 0, h: img.naturalHeight || 0 });
+      img.onerror = () => resolve({ w: 0, h: 0 });
+      img.src = dataUrl;
+    });
+  }
+  async function importImageFile(file) {
+    const dataUrl = await readAsDataUrl(file);
+    const nat = await naturalSize(dataUrl);
+    const p = PRESETS[state.preset];
+    // Fit the image inside the slide preserving aspect, centered.
+    const iw = nat.w || p.width, ih = nat.h || p.height;
+    const scale = Math.min(p.width / iw, p.height / ih);
+    const w = Math.round(iw * scale), h = Math.round(ih * scale);
+    const x = Math.round((p.width - w) / 2), y = Math.round((p.height - h) / 2);
+    state.canvas = { width: p.width, height: p.height, background: undefined };
+    state.components = [{
+      id: 'image-1', type: 'logo', sourceLabel: file.name,
+      x: x, y: y, width: w, height: h,
+      content: '<img src="' + dataUrl + '" />', style: {}, locked: false, visible: true,
+    }];
+    state.highlightId = null;
+    renderPreview();
+    toast('Imported image as a single picture layer. Text cannot be extracted from a raster image; use HTML to separate text and picture layers.');
+  }
+
+  async function importFiles(fileList) {
+    const files = Array.from(fileList);
+    const imageFile = files.find((f) => IMAGE_EXT.test(f.name) || /^image\//.test(f.type));
+    const htmlFile = files.find((f) => /\.(html?|htm)$/i.test(f.name) || /text\/html/.test(f.type));
+    if (htmlFile) {
+      const sel = E.selectImportFiles(files);
+      const check = E.validateImportFile(sel.htmlFile);
+      if (check) { toast('Import failed: ' + check.message); return; }
+      const html = await sel.htmlFile.text();
+      await importFromHtml(html, sel.cssFiles);
+      return;
+    }
+    if (imageFile) { await importImageFile(imageFile); return; }
+    toast('Choose an .html file or a PNG/JPG image.');
+  }
+
+  // ---- Preset ----
+  function applyPreset(preset, silent) {
+    const p = PRESETS[preset];
+    if (!p) return;
+    const prev = state.canvas;
+    if (state.components.length && (prev.width !== p.width || prev.height !== p.height)) {
+      const adapted = E.adaptComponentsToResponsiveCanvasWithWarnings({
+        previousCanvas: { width: prev.width, height: prev.height, background: prev.background },
+        nextCanvas: { width: p.width, height: p.height, background: prev.background },
+        components: state.components,
+      });
+      state.components = adapted.components;
+      if (!silent && adapted.warnings && adapted.warnings.length) toast('Resized to ' + preset, adapted.warnings);
+    }
+    state.preset = preset;
+    state.canvas = { width: p.width, height: p.height, background: prev.background };
+    document.querySelectorAll('#presetSeg button').forEach((b) => b.classList.toggle('active', b.dataset.preset === preset));
+    renderPreview();
+  }
+
+  // ---- Export ----
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function currentDocument() {
+    return E.createSlideDocument({ canvas: state.canvas, components: state.components });
+  }
+  function exportPptx() {
+    if (!state.components.length) return;
+    const res = E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: state.title, document: currentDocument() }]);
+    download(res.blob, 'slides.pptx');
+    if (res.warnings && res.warnings.length) toast('Exported PPTX with notes:', res.warnings);
+    else toast('Exported slides.pptx');
+  }
+  function exportHtml() {
+    if (!state.components.length) return;
+    const html = E.convertSlideComponentsToHtml({ canvas: state.canvas, components: state.components });
+    download(new Blob([html], { type: 'text/html' }), 'slides.html');
+    toast('Exported slides.html');
+  }
+
+  // ---- Wiring ----
+  $('#presetSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-preset]');
+    if (b) applyPreset(b.dataset.preset);
+  });
+  $('#importBtn').addEventListener('click', () => { $('#importModal').classList.add('show'); $('#pasteArea').focus(); });
+  $('#pasteCancelBtn').addEventListener('click', () => $('#importModal').classList.remove('show'));
+  $('#pasteImportBtn').addEventListener('click', async () => {
+    const html = $('#pasteArea').value;
+    $('#importModal').classList.remove('show');
+    await importFromHtml(html);
+    $('#pasteArea').value = '';
+  });
+  $('#chooseFilesBtn').addEventListener('click', () => $('#fileInput').click());
+  $('#fileInput').addEventListener('change', async (e) => {
+    $('#importModal').classList.remove('show');
+    if (e.target.files && e.target.files.length) await importFiles(e.target.files);
+    e.target.value = '';
+  });
+  $('#exportPptxBtn').addEventListener('click', exportPptx);
+  $('#exportHtmlBtn').addEventListener('click', exportHtml);
+  window.addEventListener('resize', () => { if (state.components.length) renderPreview(); });
+
+  // Test hook: drive conversion without the file dialog.
+  window.__slidesTest = { importFromHtml, importImageFile, getState: () => state, applyPreset };
+
+  renderPreview();
+})();
+</script>
+</body>
+</html>

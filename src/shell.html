@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Slides Converter</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #171b22; --panel-2: #1e242e; --line: #2a313c;
+    --text: #e6e9ef; --muted: #9aa4b2; --accent: #7c5cff; --accent-2: #ec4899;
+    --ok: #22c55e; --img: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text); overflow: hidden;
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex: 0 0 auto;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header .spacer { flex: 1; }
+  .btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 12px; font-size: 13px; cursor: pointer;
+  }
+  .btn:hover { border-color: #3a4452; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { background: var(--panel-2); color: var(--muted); border: 0; padding: 7px 12px; font-size: 13px; cursor: pointer; }
+  .seg button.active { background: var(--accent); color: #fff; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #stage {
+    flex: 1; position: relative; overflow: hidden; min-width: 0;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      linear-gradient(45deg, #12161c 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(-45deg, #12161c 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(45deg, transparent 75%, #12161c 75%) -8px 0/16px 16px,
+      linear-gradient(-45deg, transparent 75%, #12161c 75%) -8px 0/16px 16px,
+      #0b0e13;
+  }
+  #empty { position: absolute; color: var(--muted); font-size: 15px; text-align: center; max-width: 440px; line-height: 1.6; }
+  #canvasWrap { position: relative; box-shadow: 0 12px 48px rgba(0,0,0,.5); display: none; }
+  #canvas { position: relative; overflow: hidden; transform-origin: top left; }
+  /* Preview layers are read-only; conversion output is edited in PowerPoint. */
+  .comp { position: absolute; overflow: hidden; }
+  .selbox { position: absolute; outline: 2px solid var(--accent-2); pointer-events: none; z-index: 5; }
+  aside {
+    flex: 0 0 300px; background: var(--panel); border-left: 1px solid var(--line);
+    padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+  }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px; }
+  .summary { display: flex; gap: 8px; }
+  .pill { flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .pill .n { font-size: 20px; font-weight: 600; }
+  .pill .l { font-size: 11px; color: var(--muted); }
+  .pill.text .n { color: var(--ok); }
+  .pill.image .n { color: var(--img); }
+  .layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .layer { display: flex; align-items: center; gap: 8px; padding: 7px 9px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 12px; }
+  .layer:hover { border-color: #3a4452; }
+  .layer.active { border-color: var(--accent-2); }
+  .layer .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; padding: 2px 6px; border-radius: 4px; flex: 0 0 auto; }
+  .layer .tag.text { background: rgba(34,197,94,.15); color: var(--ok); }
+  .layer .tag.image { background: rgba(56,189,248,.15); color: var(--img); }
+  .layer .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer .dim { color: var(--muted); flex: 0 0 auto; }
+  .empty-note { color: var(--muted); font-size: 13px; }
+  #importModal { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.6); }
+  #importModal.show { display: flex; }
+  .modal-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; width: 560px; max-width: 92vw; }
+  .modal-card h3 { margin: 0 0 6px; font-size: 15px; }
+  .modal-card p { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+  .modal-card textarea { width: 100%; height: 200px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 200; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 13px; max-width: 72vw; display: none; }
+  #toast.show { display: block; }
+  #toast.warn { border-color: var(--accent-2); }
+  .warnlist { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; max-height: 120px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Slides Converter</h1>
+  <div class="seg" id="presetSeg">
+    <button data-preset="16-9" class="active">16:9</button>
+    <button data-preset="1-1">1:1</button>
+  </div>
+  <button class="btn" id="importBtn">Import</button>
+  <input type="file" id="fileInput" accept=".html,.htm,.css,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
+  <div class="spacer"></div>
+  <button class="btn" id="exportHtmlBtn" disabled>Export HTML</button>
+  <button class="btn primary" id="exportPptxBtn" disabled>Export PPTX</button>
+</header>
+<main>
+  <div id="stage">
+    <div id="empty">Import an HTML slide to convert it into an editable PowerPoint deck — text becomes real text boxes, images and gradients become separate picture/shape layers, all movable and resizable in PowerPoint. A PNG imports as a single picture layer.</div>
+    <div id="canvasWrap"><div id="canvas"></div></div>
+  </div>
+  <aside id="inspector"><div class="empty-note">No slide loaded yet.</div></aside>
+</main>
+
+<div id="importModal">
+  <div class="modal-card">
+    <h3>Import</h3>
+    <p>Paste slide HTML below, or choose an .html file (with optional .css) or a PNG/JPG image.</p>
+    <textarea id="pasteArea" placeholder="Paste slide HTML here..."></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="chooseFilesBtn">Choose file</button>
+      <button class="btn" id="pasteCancelBtn">Cancel</button>
+      <button class="btn primary" id="pasteImportBtn">Convert HTML</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* __SLIDE_ENGINE_BUNDLE__ */
+</script>
+
+<script>
+(function () {
+  'use strict';
+  const E = window.SlideEngine;
+  const PRESETS = { '16-9': { width: 1920, height: 1080 }, '1-1': { width: 1080, height: 1080 } };
+  const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+
+  const state = {
+    preset: '16-9',
+    canvas: { width: 1920, height: 1080, background: undefined },
+    components: [],
+    highlightId: null,
+    title: 'Slide',
+  };
+
+  const $ = (sel) => document.querySelector(sel);
+  const canvasEl = $('#canvas');
+  const wrapEl = $('#canvasWrap');
+  const stageEl = $('#stage');
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function toast(msg, warnings) {
+    const t = $('#toast');
+    t.className = 'show' + (warnings && warnings.length ? ' warn' : '');
+    let html = escapeHtml(msg);
+    if (warnings && warnings.length) html += '<ul class="warnlist">' + warnings.slice(0, 12).map((w) => '<li>' + escapeHtml(w) + '</li>').join('') + '</ul>';
+    t.innerHTML = html;
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { t.className = ''; }, warnings && warnings.length ? 9000 : 4000);
+  }
+  // Defense-in-depth for the preview render. The engine already rebuilds component
+  // content via DOMParser and renders imports in a sandboxed script-less iframe, so
+  // injected handlers never survive to here; this strips quoted, single-quoted, and
+  // unquoted on*/javascript: forms anyway in case content ever arrives raw.
+  function sanitize(html) {
+    return String(html)
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<script\b[^>]*>/gi, '')
+      .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+      .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+      .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
+      .replace(/\s(href|src)\s*=\s*"javascript:[^"]*"/gi, '')
+      .replace(/\s(href|src)\s*=\s*'javascript:[^']*'/gi, '')
+      .replace(/\s(href|src)\s*=\s*javascript:[^\s>]+/gi, '');
+  }
+
+  // A component is an image layer if its content is an <img> or it has an image fill.
+  function isImageComponent(c) {
+    if (/<img\b/i.test(c.content || '')) return true;
+    const fill = (c.style && c.style.backgroundFill) || '';
+    return /url\(/i.test(fill);
+  }
+
+  // ---- Preview (read-only) ----
+  function fitScale() {
+    const pad = 48;
+    const scale = Math.min((stageEl.clientWidth - pad) / state.canvas.width, (stageEl.clientHeight - pad) / state.canvas.height, 1);
+    canvasEl.style.width = state.canvas.width + 'px';
+    canvasEl.style.height = state.canvas.height + 'px';
+    canvasEl.style.transform = 'scale(' + scale + ')';
+    wrapEl.style.width = state.canvas.width * scale + 'px';
+    wrapEl.style.height = state.canvas.height * scale + 'px';
+  }
+  function componentInlineStyle(c) {
+    const s = c.style || {};
+    const p = [];
+    if (s.fontSize) p.push('font-size:' + s.fontSize + 'px');
+    if (s.fontWeight) p.push('font-weight:' + s.fontWeight);
+    if (s.fontFamily) p.push('font-family:' + s.fontFamily);
+    if (s.color) p.push('color:' + s.color);
+    if (s.backgroundFill) p.push('background:' + s.backgroundFill);
+    else if (s.backgroundColor) p.push('background-color:' + s.backgroundColor);
+    if (s.borderColor && s.borderWidth) p.push('border:' + s.borderWidth + 'px ' + (s.borderStyle || 'solid') + ' ' + s.borderColor);
+    if (s.borderRadius) p.push('border-radius:' + s.borderRadius + 'px');
+    if (s.boxShadow) p.push('box-shadow:' + s.boxShadow);
+    if (s.fontStyle) p.push('font-style:' + s.fontStyle);
+    if (s.lineHeight) p.push('line-height:' + s.lineHeight + 'px');
+    if (s.textAlign) p.push('text-align:' + s.textAlign);
+    return p.join(';');
+  }
+  function renderPreview() {
+    const has = state.components.length > 0;
+    $('#empty').style.display = has ? 'none' : 'block';
+    wrapEl.style.display = has ? 'block' : 'none';
+    $('#exportPptxBtn').disabled = !has;
+    $('#exportHtmlBtn').disabled = !has;
+    if (!has) { renderInspector(); return; }
+    fitScale();
+    canvasEl.style.background = state.canvas.background || '#ffffff';
+    canvasEl.innerHTML = '';
+    for (const c of state.components) {
+      if (c.visible === false) continue;
+      const el = document.createElement('div');
+      el.className = 'comp';
+      el.style.left = c.x + 'px';
+      el.style.top = c.y + 'px';
+      el.style.width = c.width + 'px';
+      if (typeof c.height === 'number') el.style.height = c.height + 'px';
+      el.style.cssText += ';' + componentInlineStyle(c);
+      el.innerHTML = sanitize(c.content || '');
+      canvasEl.appendChild(el);
+    }
+    drawHighlight();
+    renderInspector();
+  }
+  function drawHighlight() {
+    const old = canvasEl.querySelector('.selbox');
+    if (old) old.remove();
+    const c = state.components.find((x) => x.id === state.highlightId && x.visible !== false);
+    if (!c) return;
+    const ov = document.createElement('div');
+    ov.className = 'selbox';
+    ov.style.left = c.x + 'px'; ov.style.top = c.y + 'px';
+    ov.style.width = c.width + 'px';
+    ov.style.height = (typeof c.height === 'number' ? c.height : 40) + 'px';
+    canvasEl.appendChild(ov);
+  }
+
+  // ---- Layer list (read-only) ----
+  function renderInspector() {
+    const box = $('#inspector');
+    if (!state.components.length) { box.innerHTML = '<div class="empty-note">No slide loaded yet.</div>'; return; }
+    const imgCount = state.components.filter(isImageComponent).length;
+    const textCount = state.components.length - imgCount;
+    const rows = state.components.map((c) => {
+      const img = isImageComponent(c);
+      const name = escapeHtml(c.sourceLabel || c.type || 'layer');
+      const dim = Math.round(c.width) + '×' + Math.round(c.height || 0);
+      return '<li class="layer' + (c.id === state.highlightId ? ' active' : '') + '" data-id="' + escapeHtml(c.id) + '">' +
+        '<span class="tag ' + (img ? 'image' : 'text') + '">' + (img ? 'img' : 'text') + '</span>' +
+        '<span class="name">' + name + '</span><span class="dim">' + dim + '</span></li>';
+    }).join('');
+    box.innerHTML =
+      '<div><h2>Converted layers</h2><div class="summary">' +
+        '<div class="pill text"><div class="n">' + textCount + '</div><div class="l">text boxes</div></div>' +
+        '<div class="pill image"><div class="n">' + imgCount + '</div><div class="l">picture / shape</div></div>' +
+      '</div></div>' +
+      '<div><h2>Layers</h2><ul class="layers">' + rows + '</ul></div>';
+    box.querySelectorAll('.layer').forEach((li) => li.addEventListener('click', () => {
+      state.highlightId = (state.highlightId === li.dataset.id) ? null : li.dataset.id;
+      drawHighlight();
+      renderInspector();
+    }));
+  }
+
+  // ---- Import ----
+  async function importFromHtml(html, cssFiles) {
+    if (!html || !html.trim()) { toast('Nothing to import — the HTML was empty.'); return; }
+    const inputCheck = E.validateHtmlImportInput(html);
+    if (inputCheck) { toast('Import failed: ' + inputCheck.message); return; }
+    try {
+      let effectiveHtml = html;
+      if (cssFiles && cssFiles.length) {
+        const bundled = await E.inlineCompanionStylesheets(html, cssFiles);
+        effectiveHtml = bundled.html;
+      }
+      const result = await E.convertHtmlToSlideComponents(effectiveHtml);
+      state.components = result.components || [];
+      const c = result.canvas || {};
+      state.canvas = { width: c.width || state.canvas.width, height: c.height || state.canvas.height, background: c.background };
+      applyPreset(state.preset, true);
+      state.highlightId = null;
+      renderPreview();
+      const parseCheck = E.validateParsedResult(result);
+      const warnings = result.warnings || [];
+      if (parseCheck) toast('Converted, but: ' + parseCheck.message, warnings);
+      else toast('Converted ' + state.components.length + ' layer(s).', warnings);
+    } catch (err) {
+      const info = E.classifyImportError(err);
+      toast('Import failed: ' + info.message);
+    }
+  }
+
+  function readAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error || new Error('read failed'));
+      r.readAsDataURL(file);
+    });
+  }
+  function naturalSize(dataUrl) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ w: img.naturalWidth || 0, h: img.naturalHeight || 0 });
+      img.onerror = () => resolve({ w: 0, h: 0 });
+      img.src = dataUrl;
+    });
+  }
+  async function importImageFile(file) {
+    const dataUrl = await readAsDataUrl(file);
+    const nat = await naturalSize(dataUrl);
+    const p = PRESETS[state.preset];
+    // Fit the image inside the slide preserving aspect, centered.
+    const iw = nat.w || p.width, ih = nat.h || p.height;
+    const scale = Math.min(p.width / iw, p.height / ih);
+    const w = Math.round(iw * scale), h = Math.round(ih * scale);
+    const x = Math.round((p.width - w) / 2), y = Math.round((p.height - h) / 2);
+    state.canvas = { width: p.width, height: p.height, background: undefined };
+    state.components = [{
+      id: 'image-1', type: 'logo', sourceLabel: file.name,
+      x: x, y: y, width: w, height: h,
+      content: '<img src="' + dataUrl + '" />', style: {}, locked: false, visible: true,
+    }];
+    state.highlightId = null;
+    renderPreview();
+    toast('Imported image as a single picture layer. Text cannot be extracted from a raster image; use HTML to separate text and picture layers.');
+  }
+
+  async function importFiles(fileList) {
+    const files = Array.from(fileList);
+    const imageFile = files.find((f) => IMAGE_EXT.test(f.name) || /^image\//.test(f.type));
+    const htmlFile = files.find((f) => /\.(html?|htm)$/i.test(f.name) || /text\/html/.test(f.type));
+    if (htmlFile) {
+      const sel = E.selectImportFiles(files);
+      const check = E.validateImportFile(sel.htmlFile);
+      if (check) { toast('Import failed: ' + check.message); return; }
+      const html = await sel.htmlFile.text();
+      await importFromHtml(html, sel.cssFiles);
+      return;
+    }
+    if (imageFile) { await importImageFile(imageFile); return; }
+    toast('Choose an .html file or a PNG/JPG image.');
+  }
+
+  // ---- Preset ----
+  function applyPreset(preset, silent) {
+    const p = PRESETS[preset];
+    if (!p) return;
+    const prev = state.canvas;
+    if (state.components.length && (prev.width !== p.width || prev.height !== p.height)) {
+      const adapted = E.adaptComponentsToResponsiveCanvasWithWarnings({
+        previousCanvas: { width: prev.width, height: prev.height, background: prev.background },
+        nextCanvas: { width: p.width, height: p.height, background: prev.background },
+        components: state.components,
+      });
+      state.components = adapted.components;
+      if (!silent && adapted.warnings && adapted.warnings.length) toast('Resized to ' + preset, adapted.warnings);
+    }
+    state.preset = preset;
+    state.canvas = { width: p.width, height: p.height, background: prev.background };
+    document.querySelectorAll('#presetSeg button').forEach((b) => b.classList.toggle('active', b.dataset.preset === preset));
+    renderPreview();
+  }
+
+  // ---- Export ----
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function currentDocument() {
+    return E.createSlideDocument({ canvas: state.canvas, components: state.components });
+  }
+  function exportPptx() {
+    if (!state.components.length) return;
+    const res = E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: state.title, document: currentDocument() }]);
+    download(res.blob, 'slides.pptx');
+    if (res.warnings && res.warnings.length) toast('Exported PPTX with notes:', res.warnings);
+    else toast('Exported slides.pptx');
+  }
+  function exportHtml() {
+    if (!state.components.length) return;
+    const html = E.convertSlideComponentsToHtml({ canvas: state.canvas, components: state.components });
+    download(new Blob([html], { type: 'text/html' }), 'slides.html');
+    toast('Exported slides.html');
+  }
+
+  // ---- Wiring ----
+  $('#presetSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-preset]');
+    if (b) applyPreset(b.dataset.preset);
+  });
+  $('#importBtn').addEventListener('click', () => { $('#importModal').classList.add('show'); $('#pasteArea').focus(); });
+  $('#pasteCancelBtn').addEventListener('click', () => $('#importModal').classList.remove('show'));
+  $('#pasteImportBtn').addEventListener('click', async () => {
+    const html = $('#pasteArea').value;
+    $('#importModal').classList.remove('show');
+    await importFromHtml(html);
+    $('#pasteArea').value = '';
+  });
+  $('#chooseFilesBtn').addEventListener('click', () => $('#fileInput').click());
+  $('#fileInput').addEventListener('change', async (e) => {
+    $('#importModal').classList.remove('show');
+    if (e.target.files && e.target.files.length) await importFiles(e.target.files);
+    e.target.value = '';
+  });
+  $('#exportPptxBtn').addEventListener('click', exportPptx);
+  $('#exportHtmlBtn').addEventListener('click', exportHtml);
+  window.addEventListener('resize', () => { if (state.components.length) renderPreview(); });
+
+  // Test hook: drive conversion without the file dialog.
+  window.__slidesTest = { importFromHtml, importImageFile, getState: () => state, applyPreset };
+
+  renderPreview();
+})();
+</script>
+</body>
+</html>

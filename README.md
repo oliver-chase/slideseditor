@@ -9,8 +9,8 @@ The point is the conversion. You do the moving, resizing, and editing **in Power
 ## Use it
 
 1. Open `slideeditor.html` in any modern browser. No install, no server, no build, no network.
-2. Import: paste HTML, choose an `.html` file (plus its `.css`), or choose a PNG/JPG.
-3. Pick a canvas preset — **16:9** or **1:1**.
+2. Import: paste HTML, choose an `.html` file (plus its `.css`), or drag-and-drop a file anywhere on the page. PNG/JPG imports as a single picture layer.
+3. Pick a canvas preset — **Native** (default, keeps source dimensions) or **16:9** / **1:1** (reshape options).
 4. Export **PPTX** (primary) or **HTML**.
 
 - **HTML input** is the path that separates text from images: each positioned element becomes its own layer, and text nested inside a positioned container is split into its own editable text boxes.

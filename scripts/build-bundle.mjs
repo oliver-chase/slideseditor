@@ -87,7 +87,13 @@ function buildHtml(engineJs) {
   if (!shell.includes(marker)) {
     throw new Error(`shell.html is missing the ${marker} injection marker`)
   }
-  return shell.replace(marker, engineJs)
+  // The engine contains string literals with a literal "</script>" (reveal.js
+  // export markup). Inside an inline <script> the HTML parser would treat that as
+  // the closing tag and truncate the bundle. Break the token with a backslash,
+  // which is inert in a JS string. Also avoid re-substituting the marker text if
+  // it ever appears in the engine (use a function replacement, not a string).
+  const safeEngine = engineJs.replace(/<\/(script)/gi, '<\\/$1')
+  return shell.replace(marker, () => safeEngine)
 }
 
 // Run directly: emit slideeditor.html.

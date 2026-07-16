@@ -27,24 +27,29 @@ const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationship
 
 const SLIDE_WIDTH_EMU = 9_144_000
 const SLIDE_HEIGHT_EMU = 5_143_500
+// CSS reference pixel at 96dpi: 1px = 9525 EMU. Sizing the slide this way keeps the
+// geometry scale and the font scale (1px = 0.75pt) consistent BY CONSTRUCTION — a
+// 28px heading in a 1920px canvas exports as a 21pt run in a 20in slide, exactly the
+// proportion the browser rendered. (The previous pin-to-10in normalization scaled
+// geometry but not fonts, so text exported ~2x too large and overlapped.)
+const EMU_PER_PX = 9525
+// PowerPoint's hard ceiling is 56in per axis (51,206,400 EMU).
+const MAX_SLIDE_AXIS_EMU = 51_206_400
 
 interface SlideEmu {
   w: number
   h: number
+  emuPerPx: number
 }
 
-// Derive PPTX slide dimensions from the canvas aspect ratio so the horizontal and
-// vertical scale factors stay equal (no stretch). The longer axis is pinned to the
-// standard 10in (9,144,000 EMU) width and the shorter axis scaled proportionally,
-// which keeps every dimension within PowerPoint's bounds. A 16:9 canvas reproduces
-// the classic 9,144,000 x 5,143,500; a 1:1 canvas yields a true square.
+// Map the canvas to the slide at true 96dpi (1px = 9525 EMU), shrinking the scale
+// uniformly only if a huge canvas would exceed PowerPoint's 56in axis limit. The
+// aspect ratio is always preserved exactly.
 function computeSlideEmu(canvasWidth: number, canvasHeight: number): SlideEmu {
-  const w = Math.max(1, canvasWidth || SLIDE_WIDTH_EMU)
-  const h = Math.max(1, canvasHeight || SLIDE_HEIGHT_EMU)
-  if (w >= h) {
-    return { w: SLIDE_WIDTH_EMU, h: Math.round((SLIDE_WIDTH_EMU * h) / w) }
-  }
-  return { w: Math.round((SLIDE_WIDTH_EMU * w) / h), h: SLIDE_WIDTH_EMU }
+  const w = Math.max(1, canvasWidth || 1920)
+  const h = Math.max(1, canvasHeight || 1080)
+  const emuPerPx = Math.min(EMU_PER_PX, MAX_SLIDE_AXIS_EMU / Math.max(w, h))
+  return { w: Math.round(w * emuPerPx), h: Math.round(h * emuPerPx), emuPerPx }
 }
 
 const crcTable = (() => {
@@ -408,10 +413,13 @@ function buildTextParagraphs(
   bold: boolean,
   italic: boolean,
   typeface: string,
+  fontScale = 1,
 ): string {
   const lines = text.split('\n')
-  // fontSizePt arrives as CSS px; PPTX sz is hundredths of a point (px * 0.75 = pt)
-  const size = Math.round(clamp(fontSizePt * 0.75, 8, 120) * 100)
+  // fontSizePt arrives as CSS px; PPTX sz is hundredths of a point (px * 0.75 = pt).
+  // fontScale (normally 1) shrinks fonts with the geometry when a huge canvas had to
+  // be scaled down to fit PowerPoint's 56in axis limit.
+  const size = Math.round(clamp(fontSizePt * 0.75 * fontScale, 4, 400) * 100)
   const boldAttr = bold ? ' b="1"' : ''
   const italicAttr = italic ? ' i="1"' : ''
 
@@ -550,6 +558,7 @@ function buildShapeXml(
   scaleY: number,
   slideRef: string,
   warnings: string[],
+  fontScale = 1,
 ): string {
   const text = toPlainText(component.content || '')
   const hasBackground = !!(component.style.backgroundFill || component.style.backgroundColor)
@@ -588,7 +597,12 @@ function buildShapeXml(
   const typeface = resolveTypeface(component.style.fontFamily)
 
   const spPr = `<p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="${shapeGeom}"><a:avLst/></a:prstGeom>${fillXml}${lineXml}${shadowXml}</p:spPr>`
-  const txBody = `<p:txBody><a:bodyPr wrap="square"/><a:lstStyle/>${buildTextParagraphs(text, fontSize, textColorHex, align, bold, italic, typeface)}</p:txBody>`
+  // A box the browser rendered as a single line must stay a single line: viewer
+  // fallback fonts (e.g. Arial for Aptos) run wider and would wrap "LOW" to
+  // L/O/W in the exact-measured box. Let short runs overflow instead of wrapping.
+  const singleLine = !text.includes('\n') &&
+    typeof component.height === 'number' && component.height > 0 && component.height <= fontSize * 1.8
+  const txBody = `<p:txBody><a:bodyPr wrap="${singleLine ? 'none' : 'square'}"/><a:lstStyle/>${buildTextParagraphs(text, fontSize, textColorHex, align, bold, italic, typeface, fontScale)}</p:txBody>`
 
   return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${escXml(component.type + '-' + component.id)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>${spPr}${txBody}</p:sp>`
 }
@@ -609,6 +623,8 @@ function buildSlideXml(
   const safeHeight = Math.max(1, slide.canvas.height || 1080)
   const scaleX = slideEmu.w / safeWidth
   const scaleY = slideEmu.h / safeHeight
+  // 1 while the slide maps at true 96dpi; <1 only when a >56in canvas was scaled down.
+  const fontScale = slideEmu.emuPerPx / EMU_PER_PX
   const slideRef = `slide ${slideIndex + 1} (${slide.title || slide.id})`
 
   const shapes: string[] = []
@@ -669,6 +685,7 @@ function buildSlideXml(
             scaleY,
             slideRef,
             warnings,
+            fontScale,
           )
           if (captionShape) {
             shapes.push(captionShape)
@@ -686,7 +703,7 @@ function buildSlideXml(
       continue
     }
 
-    const shapeXml = buildShapeXml(component, shapeId, scaleX, scaleY, slideRef, warnings)
+    const shapeXml = buildShapeXml(component, shapeId, scaleX, scaleY, slideRef, warnings, fontScale)
     if (!shapeXml) continue
     shapes.push(shapeXml)
     shapeId += 1

@@ -28,6 +28,25 @@ const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationship
 const SLIDE_WIDTH_EMU = 9_144_000
 const SLIDE_HEIGHT_EMU = 5_143_500
 
+interface SlideEmu {
+  w: number
+  h: number
+}
+
+// Derive PPTX slide dimensions from the canvas aspect ratio so the horizontal and
+// vertical scale factors stay equal (no stretch). The longer axis is pinned to the
+// standard 10in (9,144,000 EMU) width and the shorter axis scaled proportionally,
+// which keeps every dimension within PowerPoint's bounds. A 16:9 canvas reproduces
+// the classic 9,144,000 x 5,143,500; a 1:1 canvas yields a true square.
+function computeSlideEmu(canvasWidth: number, canvasHeight: number): SlideEmu {
+  const w = Math.max(1, canvasWidth || SLIDE_WIDTH_EMU)
+  const h = Math.max(1, canvasHeight || SLIDE_HEIGHT_EMU)
+  if (w >= h) {
+    return { w: SLIDE_WIDTH_EMU, h: Math.round((SLIDE_WIDTH_EMU * h) / w) }
+  }
+  return { w: Math.round((SLIDE_WIDTH_EMU * w) / h), h: SLIDE_WIDTH_EMU }
+}
+
 const crcTable = (() => {
   const table = new Uint32Array(256)
   for (let i = 0; i < 256; i += 1) {
@@ -520,11 +539,12 @@ function buildSlideXml(
   slideIndex: number,
   warnings: string[],
   media: Array<{ path: string; data: Uint8Array }>,
+  slideEmu: SlideEmu,
 ): SlideXmlResult {
   const safeWidth = Math.max(1, slide.canvas.width || 1920)
   const safeHeight = Math.max(1, slide.canvas.height || 1080)
-  const scaleX = SLIDE_WIDTH_EMU / safeWidth
-  const scaleY = SLIDE_HEIGHT_EMU / safeHeight
+  const scaleX = slideEmu.w / safeWidth
+  const scaleY = slideEmu.h / safeHeight
   const slideRef = `slide ${slideIndex + 1} (${slide.title || slide.id})`
 
   const shapes: string[] = []
@@ -547,7 +567,7 @@ function buildSlideXml(
     const fillXml = canvasGradient
       ? buildGradientFillXml(canvasGradient)
       : buildSolidFillXml(canvasColor as ParsedColor)
-    const bg = `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="slide-background"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${SLIDE_WIDTH_EMU}" cy="${SLIDE_HEIGHT_EMU}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${fillXml}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`
+    const bg = `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="slide-background"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${slideEmu.w}" cy="${slideEmu.h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${fillXml}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`
     shapes.push(bg)
     shapeId += 1
   }
@@ -637,12 +657,17 @@ function buildContentTypesXml(slideCount: number, imageExtensions: string[] = []
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>${slideOverrides}</Types>`
 }
 
-function buildPresentationXml(slideCount: number): string {
+function buildPresentationXml(slideCount: number, slideEmu: SlideEmu): string {
   const slideIds = Array.from({ length: slideCount }, (_, index) =>
     `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`,
   ).join('')
 
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:presentation xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="${SLIDE_WIDTH_EMU}" cy="${SLIDE_HEIGHT_EMU}" type="screen16x9"/><p:notesSz cx="6858000" cy="9144000"/><p:defaultTextStyle/></p:presentation>`
+  // Emit the type hint only for the exact 16:9 ratio; for any other size cx/cy are
+  // authoritative and a mismatched type hint would confuse PowerPoint.
+  const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
+  const sizeType = isScreen16x9 ? ' type="screen16x9"' : ''
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:presentation xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="${slideEmu.w}" cy="${slideEmu.h}"${sizeType}/><p:notesSz cx="6858000" cy="9144000"/><p:defaultTextStyle/></p:presentation>`
 }
 
 function buildPresentationRelsXml(slideCount: number): string {
@@ -684,8 +709,10 @@ function buildSlideRelsXml(imageRels: Array<{ rId: string; target: string }> = [
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>${imageRelXml}</Relationships>`
 }
 
-function buildAppPropsXml(slideCount: number): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Oliver App</Application><Slides>${slideCount}</Slides><PresentationFormat>Widescreen</PresentationFormat></Properties>`
+function buildAppPropsXml(slideCount: number, slideEmu: SlideEmu): string {
+  const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
+  const presentationFormat = isScreen16x9 ? 'Widescreen' : 'Custom'
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Oliver App</Application><Slides>${slideCount}</Slides><PresentationFormat>${presentationFormat}</PresentationFormat></Properties>`
 }
 
 function buildCorePropsXml(): string {
@@ -718,10 +745,14 @@ function convertSlidesToPptx(slidesInput: SlidePptxExportInput[]): SlidePptxExpo
   // Build slides first so embedded-image media parts and their content-type
   // Defaults are known before [Content_Types].xml is written. ZIP entry order
   // is not significant, so the manifest can be pushed after the slide loop.
+  // Slide size is presentation-level (one size for all slides); derive it from the
+  // first slide's canvas, which reflects the chosen 16:9 / 1:1 preset for the deck.
+  const slideEmu = computeSlideEmu(slides[0].canvas.width, slides[0].canvas.height)
+
   const media: Array<{ path: string; data: Uint8Array }> = []
   const slideEntries: Array<{ path: string; data: Uint8Array }> = []
   slides.forEach((slide, index) => {
-    const { xml, relsXml } = buildSlideXml(slide, index, warnings, media)
+    const { xml, relsXml } = buildSlideXml(slide, index, warnings, media, slideEmu)
     slideEntries.push({ path: `ppt/slides/slide${index + 1}.xml`, data: encoder.encode(xml) })
     slideEntries.push({ path: `ppt/slides/_rels/slide${index + 1}.xml.rels`, data: encoder.encode(relsXml) })
   })
@@ -729,9 +760,9 @@ function convertSlidesToPptx(slidesInput: SlidePptxExportInput[]): SlidePptxExpo
 
   entries.push({ path: '[Content_Types].xml', data: encoder.encode(buildContentTypesXml(slides.length, imageExtensions)) })
   entries.push({ path: '_rels/.rels', data: encoder.encode(buildRootRelsXml()) })
-  entries.push({ path: 'docProps/app.xml', data: encoder.encode(buildAppPropsXml(slides.length)) })
+  entries.push({ path: 'docProps/app.xml', data: encoder.encode(buildAppPropsXml(slides.length, slideEmu)) })
   entries.push({ path: 'docProps/core.xml', data: encoder.encode(buildCorePropsXml()) })
-  entries.push({ path: 'ppt/presentation.xml', data: encoder.encode(buildPresentationXml(slides.length)) })
+  entries.push({ path: 'ppt/presentation.xml', data: encoder.encode(buildPresentationXml(slides.length, slideEmu)) })
   entries.push({ path: 'ppt/_rels/presentation.xml.rels', data: encoder.encode(buildPresentationRelsXml(slides.length)) })
   entries.push({ path: 'ppt/slideMasters/slideMaster1.xml', data: encoder.encode(buildSlideMasterXml()) })
   entries.push({ path: 'ppt/slideMasters/_rels/slideMaster1.xml.rels', data: encoder.encode(buildSlideMasterRelsXml()) })

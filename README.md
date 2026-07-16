@@ -1,10 +1,10 @@
 # Slides Converter
 
-**A local, single-file tool that converts an HTML slide (or a PNG) into an editable PowerPoint deck.** Open `slideeditor.html` in a browser, import your slide, and export a `.pptx` where **text became real editable text boxes** (font, weight, size, spacing, and color preserved) and **images and gradients became separate movable, resizable picture and shape layers**.
+**A local, single-file tool that converts HTML slides into editable PowerPoint decks.** Open `slideeditor.html` in a browser, import your slide, and export a `.pptx` where **text became real editable text boxes** (font, weight, size, spacing, and color preserved) and **images and gradients became separate movable, resizable picture and shape layers**.
 
 The point is the conversion. You do the moving, resizing, and editing **in PowerPoint** — the page itself is just the converter: a read-only preview plus a breakdown of the converted layers.
 
-**Who this is for:** anyone who designs a slide in HTML (or exports one as a PNG) and wants it as a native, editable PowerPoint deck instead of a flat screenshot.
+**Who this is for:** anyone who designs a slide in HTML and wants it as a native, editable PowerPoint deck instead of a flat screenshot.
 
 ## Use it
 

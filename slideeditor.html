@@ -2933,7 +2933,7 @@ function convertSlideComponentsToHtml(input
   const { canvas, components, metadata } = input
   const slideId = metadata?.slideId || 'unsaved-slide'
   const revision = Number.isFinite(metadata?.revision) ? String(metadata?.revision) : '0'
-  const source = metadata?.source || 'oliver-app'
+  const source = metadata?.source || 'slides-converter'
   const exportedAt = metadata?.exportedAt || new Date().toISOString()
 
   const header = [
@@ -2991,8 +2991,8 @@ function convertSlideDocumentToRevealHtml(input
    
  )         {
   const { document, metadata } = input
-  const title = metadata?.title || 'Oliver Slides Reveal Export'
-  const source = metadata?.source || 'oliver-app'
+  const title = metadata?.title || 'Slides Reveal Export'
+  const source = metadata?.source || 'slides-converter'
   const exportedAt = metadata?.exportedAt || new Date().toISOString()
   const sections = document.deck.slides.map((slide) => buildRevealSection(slide, document.deck)).join('\n')
 

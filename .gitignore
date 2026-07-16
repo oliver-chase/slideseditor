@@ -1,4 +1,7 @@
-# OliverCode public/private runtime boundary
+# OS / editor cruft
+.DS_Store
+*.swp
+
+# Local env / secrets (never commit)
+.env
 .env.local
-.secrets/*
-!.secrets/README.md

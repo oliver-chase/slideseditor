@@ -46,6 +46,10 @@
       #0b0e13;
   }
   #empty { position: absolute; color: var(--muted); font-size: 15px; text-align: center; max-width: 440px; line-height: 1.6; }
+  #stage.dragover { outline: 3px dashed var(--accent); outline-offset: -10px; }
+  #stage.dragover::after { content: 'Drop to import'; position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 22px; font-weight: 700; color: var(--accent);
+    background: rgba(124, 92, 255, .08); pointer-events: none; }
   #canvasWrap { position: relative; box-shadow: 0 12px 48px rgba(0,0,0,.5); display: none; }
   #canvas { position: relative; overflow: hidden; transform-origin: top left; }
   /* Preview layers are read-only; conversion output is edited in PowerPoint. */
@@ -105,7 +109,7 @@
 </header>
 <main>
   <div id="stage">
-    <div id="empty">Import an HTML slide to convert it into an editable PowerPoint deck — text becomes real text boxes, images and gradients become separate picture/shape layers, all movable and resizable in PowerPoint. A PNG imports as a single picture layer.</div>
+    <div id="empty">Import an HTML slide — or drag &amp; drop it anywhere here — to convert it into an editable PowerPoint deck. Text becomes real text boxes, images and gradients become separate picture/shape layers, all movable and resizable in PowerPoint. A PNG imports as a single picture layer.</div>
     <div id="canvasWrap"><div id="canvas"></div></div>
   </div>
   <aside id="inspector"><div class="empty-note">No slide loaded yet.</div></aside>
@@ -446,6 +450,29 @@
   });
   $('#exportPptxBtn').addEventListener('click', exportPptx);
   $('#exportHtmlBtn').addEventListener('click', exportHtml);
+  // Drag & drop import: dropping a file anywhere in the window imports it. A depth
+  // counter tracks nested dragenter/dragleave so the highlight doesn't flicker.
+  (() => {
+    const stage = $('#stage');
+    let depth = 0;
+    window.addEventListener('dragover', (e) => { e.preventDefault(); });
+    window.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      depth += 1;
+      if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) stage.classList.add('dragover');
+    });
+    window.addEventListener('dragleave', () => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) stage.classList.remove('dragover');
+    });
+    window.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      depth = 0;
+      stage.classList.remove('dragover');
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) await importFiles(files);
+    });
+  })();
   window.addEventListener('resize', () => { if (state.components.length) renderPreview(); });
 
   // Test hook: drive conversion without the file dialog.

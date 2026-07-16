@@ -1555,6 +1555,58 @@ function shouldImportFlowNode(
   return false
 }
 
+// Find the outermost text-bearing (or media) descendants of a positioned container
+// so each can become its own text-box/picture layer. Elements nested inside another
+// text block are skipped, so a paragraph with an inline span stays one text box while
+// a card holding a separate heading and body yields two. Positioned descendants are
+// excluded because they are already imported as their own absolute layers.
+function collectNestedTextLeaves(
+  container: HTMLElement,
+  absoluteIdSet: Set<string>,
+  renderSnapshot: RenderSnapshot,
+  root: HTMLElement,
+): HTMLElement[] {
+  const leaves: HTMLElement[] = []
+  for (const node of Array.from(container.querySelectorAll<HTMLElement>('*'))) {
+    const id = node.getAttribute('data-import-node-id') || ''
+    if (!id || absoluteIdSet.has(id)) continue
+    const tag = node.tagName.toLowerCase()
+    const isMedia = FLOW_MEDIA_TAGS.has(tag)
+    if (!isMedia && !hasOwnTextNode(node)) continue
+
+    let ancestor = node.parentElement
+    let skip = false
+    while (ancestor) {
+      const ancestorId = ancestor.getAttribute('data-import-node-id') || ''
+      // A nested positioned container owns its own subtree in its own pass; don't
+      // pull its descendants up into this container (which would duplicate them).
+      if (ancestor !== container && ancestorId && absoluteIdSet.has(ancestorId)) { skip = true; break }
+      // Keep text atomic: skip anything inside a text-bearing element, INCLUDING the
+      // container itself (so inline <span>/<strong>/<em> in a positioned heading or
+      // paragraph is not split out and left overlapping the remaining text).
+      if (hasOwnTextNode(ancestor)) { skip = true; break }
+      if (ancestor === container) break
+      ancestor = ancestor.parentElement
+    }
+    if (skip) continue
+
+    const renderNode = renderSnapshot.nodesById.get(id) || node
+    const renderRoot = renderSnapshot.root || root
+    const rect = measureNodeRect(renderNode, renderRoot)
+    if ((rect.width || 0) < MIN_FLOW_NODE_SIZE || (rect.height || 0) < MIN_FLOW_NODE_SIZE) continue
+
+    const cs = readComputedStyleSafe(renderNode)
+    if (cs) {
+      const disp = (cs.display || '').toLowerCase()
+      const vis = (cs.visibility || '').toLowerCase()
+      const op = Number.parseFloat(cs.opacity || '1')
+      if (disp === 'none' || vis === 'hidden' || (Number.isFinite(op) && op <= 0.01)) continue
+    }
+    leaves.push(node)
+  }
+  return leaves
+}
+
 export async function convertHtmlToSlideComponents(html: string): Promise<SlideImportResult> {
   const warnings: string[] = []
   const buildEmergencyFallbackImportResult = (reason: string): SlideImportResult => {
@@ -1798,9 +1850,49 @@ export async function convertHtmlToSlideComponents(html: string): Promise<SlideI
       warnings.push('No importable child layers were detected; imported the slide root as a locked fallback layer.')
     }
 
+    // In absolute mode, split text nested inside a positioned container into its own
+    // text-box layers (each keeps its font/size/color) instead of collapsing the whole
+    // container into one uniform text blob. The container is then imported as a
+    // background/shape layer with the extracted text removed.
+    const strippedIdsByContainer = new Map<string, Set<string>>()
+    let nodesForBuild = nodes
+    if (importMode === 'absolute') {
+      const absoluteIdSet = new Set(absoluteNodes.map((entry) => entry.getAttribute('data-import-node-id') || ''))
+      const extraNodes: HTMLElement[] = []
+      const seenExtra = new Set<string>()
+      for (const container of absoluteNodes) {
+        const containerId = container.getAttribute('data-import-node-id') || ''
+        const leaves = collectNestedTextLeaves(container, absoluteIdSet, renderSnapshot, root)
+        const stripSet = new Set<string>()
+        for (const leaf of leaves) {
+          const leafId = leaf.getAttribute('data-import-node-id') || ''
+          if (!leafId || seenExtra.has(leafId)) continue
+          seenExtra.add(leafId)
+          stripSet.add(leafId)
+          extraNodes.push(leaf)
+        }
+        // Strip nested positioned descendants: each becomes its own component, so
+        // leaving it inside this container's content would render its text twice.
+        for (const descendant of Array.from(container.querySelectorAll<HTMLElement>('[data-import-node-id]'))) {
+          const descId = descendant.getAttribute('data-import-node-id') || ''
+          if (descId && descId !== containerId && absoluteIdSet.has(descId)) stripSet.add(descId)
+        }
+        if (stripSet.size > 0) strippedIdsByContainer.set(containerId, stripSet)
+      }
+      if (extraNodes.length > 0) {
+        const orderIndex = new Map(allNodes.map((entry, i) => [entry, i] as const))
+        nodesForBuild = [...absoluteNodes, ...extraNodes].sort(
+          (a, b) => (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0),
+        )
+        warnings.push(
+          'Split ' + extraNodes.length + ' nested text element' + (extraNodes.length === 1 ? '' : 's') + ' into separate editable text layers.',
+        )
+      }
+    }
+
     const components: SlideComponent[] = []
-    for (let index = 0; index < nodes.length; index += 1) {
-      const node = nodes[index]
+    for (let index = 0; index < nodesForBuild.length; index += 1) {
+      const node = nodesForBuild[index]
       const styleMap = parseInlineStyle(node.getAttribute('style') || '')
       const nodeLabel = getNodeLabel(node)
       const nodeId = node.getAttribute('data-import-node-id') || ''
@@ -1809,10 +1901,18 @@ export async function convertHtmlToSlideComponents(html: string): Promise<SlideI
       const computedStyle = readComputedStyleSafe(renderNode)
       const measured = measureNodeRect(renderNode, renderRoot)
       const sanitizedNode = buildSanitizedContentNode(renderNode)
+      const stripSet = strippedIdsByContainer.get(nodeId)
+      if (stripSet) {
+        for (const stripId of stripSet) {
+          sanitizedNode.querySelectorAll('[data-import-node-id="' + stripId + '"]').forEach((el) => el.remove())
+        }
+      }
       const isSvg = node.tagName.toLowerCase() === 'svg'
       const content = isSvg
         ? resolveSvgImageFallback(sanitizedNode, nodeLabel, warnings)
-        : (sanitizedNode.innerHTML.trim() || sanitizedNode.outerHTML.trim())
+        : stripSet
+          ? sanitizedNode.innerHTML.trim()
+          : (sanitizedNode.innerHTML.trim() || sanitizedNode.outerHTML.trim())
 
       const explicitLeft = parseStylePositionPx(styleMap, 'left', nodeLabel, warnings, sourceCanvasWidth)
       const explicitTop = parseStylePositionPx(styleMap, 'top', nodeLabel, warnings, sourceCanvasHeight)

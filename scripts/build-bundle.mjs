@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = join(HERE, '..')
-const ENGINE_DIR = join(REPO, 'imported', 'src', 'components', 'slides')
+const ENGINE_DIR = join(REPO, 'engine')
 
 // Dependency order matters for the flat concat: a module's runtime dependencies
 // (createSlideDocument, MAX_IMPORT_FILE_SIZE_BYTES) must be defined above it.

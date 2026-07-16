@@ -1,74 +1,62 @@
-# Architecture — Slides Editor
+# Architecture — Slides Converter
 
-Status: Active (module extraction phase)
-Last updated: 2026-05-23
+Status: Active
+Last updated: 2026-07-16
 Owner: Engineering
 
 ## Overview
 
-Slides Editor is the standalone extraction of the Slides module from `oliver-app`. The current architecture is transitional — code lives in `imported/` and is being systematically moved into a clean standalone app shell.
+The Slides Converter is a **local, zero-dependency, single-file browser tool**. It converts an HTML slide (or a PNG) into an editable PowerPoint deck: text becomes real editable text boxes, and images and gradients become separate movable picture and shape layers. There is no server, no deploy, no runtime, and no build step for the user — they open one HTML file.
 
-## Current Structure
-
-```
-slideseditor/
-├── imported/          ← Original module code (to be migrated out)
-│   └── ...              (preserved for extraction completeness)
-├── AGENTS.md           Agent configuration
-├── README.md           Scope and setup
-└── docs/               (emerging documentation)
-```
-
-## Intended Architecture (Post-Extraction)
+## Structure
 
 ```
 slideseditor/
-├── app/                Next.js app router pages and API routes
-├── components/         Reusable UI components
-├── lib/                Business logic, types, and utilities
-├── public/             Static assets
-├── tests/              Test suite
-├── docs/               Documentation
-├── AGENTS.md
-├── ARCHITECTURE.md
-├── QUALITY_BASELINE.md
-└── README.md
+├── slideeditor.html         Built deliverable (engine inlined into the shell)
+├── src/
+│   └── shell.html           Converter UI: preview, layer panel, presets, import/export
+├── engine/                  Pure-TypeScript conversion engine
+│   ├── types.ts             Shared component/canvas/document types
+│   ├── persistence-types.ts Slide record shapes
+│   ├── document.ts          createSlideDocument + document helpers
+│   ├── import-validation.ts Input guards, file-size limits, error classification
+│   ├── html-import.ts       HTML -> positioned components (measure + decompose)
+│   ├── html-export.ts       Components -> standalone HTML
+│   ├── pptx-export.ts       Components -> OOXML/PPTX (hand-rolled ZIP + XML)
+│   └── import-file-bundle.ts File/stylesheet selection and inlining
+├── scripts/
+│   └── build-bundle.mjs      Zero-dep bundler (strip types, flatten, inline)
+├── BACKLOG.md                Open work and deferred features
+├── README.md
+└── ARCHITECTURE.md
 ```
+
+## Build pipeline
+
+`scripts/build-bundle.mjs`:
+
+1. Reads the eight `engine/*.ts` files in dependency order.
+2. Strips TypeScript types with node's built-in `stripTypeScriptTypes` (node >= 22.13) and drops every ES `import`/`export` line — all cross-module dependencies resolve in one flat scope.
+3. Concatenates them into a single IIFE that exposes the public API on `window.SlideEngine`.
+4. Injects that bundle into `src/shell.html` at the `/* __SLIDE_ENGINE_BUNDLE__ */` marker (escaping any literal `</script>` in engine strings) and writes `slideeditor.html`.
+
+No npm install, no bundler dependency, no deploy.
+
+## Conversion flow
+
+1. **Import** (`html-import.ts`) — parse the HTML, render it in a hidden sandboxed iframe, and read `getComputedStyle` / `getBoundingClientRect` to place each positioned element as its own component. Text nested inside a positioned container (without its own position) is split into separate editable text boxes; inline emphasis (`<span>`/`<strong>`/`<em>`) stays atomic. PNG/JPG imports as one fit-centered picture layer.
+2. **Preview** (`shell.html`) — read-only render at the chosen preset (16:9 or 1:1) plus a converted-layers panel classifying each layer as text, picture, or shape.
+3. **Export** (`pptx-export.ts` / `html-export.ts`) — emit a native PPTX (text runs as `<a:t>`, images as `<p:pic>` with media parts and rels, gradients/borders as shape fills) or a standalone HTML file.
 
 ## Scope
 
-The editor is scoped to the **import/edit/save/export** workflow:
+- **Input:** HTML (primary — enables text/image separation) or PNG/JPG (single picture layer).
+- **Output:** PPTX (primary) or HTML.
+- **Canvas presets:** 16:9 and 1:1 only.
+- Converter, not editor: no on-page drag/resize/inline-edit.
 
-1. **Import** — paste HTML or import files into an editable slide/deck workspace
-2. **Edit** — modify slide/deck canvas content
-3. **Save** — save/load slides through "My Slides"
-4. **Export** — export HTML/PDF/PPTX (with existing warning/report behavior preserved)
-5. **Templates** — publish simple templates from saved slides; preview and duplicate
+## Key constraints
 
-### Excluded (unless explicitly reactivated)
-
-- Slides audit UI/actions/state hooks
-- Template approval queue, SLA/escalation, collaborator management
-- Template archive/restore/permanent delete
-- Template governance backend remnants
-- Unsaved-change telemetry
-
-## Extraction Plan
-
-1. Create a clean standalone app shell (Next.js app router)
-2. Move only current-scope code out of `imported/`
-3. Delete stale governance/audit/chatbot/module-web dependencies
-4. Rebuild the editor around a smaller import/edit/save/export architecture
-5. Delete `imported/` entirely when extraction is complete
-
-## Tech Stack
-
-- **Framework:** Next.js (App Router)
-- **Language:** TypeScript
-- **Export:** HTML/PDF/PPTX via backend job orchestration (preserved from oliver-app)
-
-## Key Constraints
-
-- Preserve PPTX export warning/report behavior during extraction
-- Preserve backend PPTX job orchestration where needed
-- Keep validation gates minimal (`npm run typecheck`) until full standalone architecture stabilizes
+- Zero runtime dependencies; the output must stay a single self-contained HTML file.
+- Rebuild `slideeditor.html` after any change to `engine/*.ts` or `src/shell.html`.
+- Engine PPTX/HTML paths are node-headless testable (strip types, run, unzip, assert). `html-import.ts` and the shell need a real browser (DOMParser/iframe/getComputedStyle) — verify with Playwright against `file://slideeditor.html` via the `window.__slidesTest` hook.

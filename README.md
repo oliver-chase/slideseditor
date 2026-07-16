@@ -1,39 +1,50 @@
-# Slides Editor
+# Slides Converter
 
-**Slides Editor is a tool for importing HTML content, editing it into polished slide decks, and exporting them as HTML, PDF, or PPTX.** Think of it as a lightweight presentation builder — you bring your content (or paste it in), arrange it into slides, and export when you're ready.
+**A local, single-file tool that converts an HTML slide (or a PNG) into an editable PowerPoint deck.** Open `slideeditor.html` in a browser, import your slide, and export a `.pptx` where **text became real editable text boxes** (font, weight, size, spacing, and color preserved) and **images and gradients became separate movable, resizable picture and shape layers**.
 
-It was extracted from the oliver-app project to live as its own standalone tool.
+The point is the conversion. You do the moving, resizing, and editing **in PowerPoint** — the page itself is just the converter: a read-only preview plus a breakdown of the converted layers.
 
-**Who this is for:** anyone who needs to turn existing HTML content into presentation-ready slides without starting from scratch in PowerPoint or Google Slides.
+**Who this is for:** anyone who designs a slide in HTML (or exports one as a PNG) and wants it as a native, editable PowerPoint deck instead of a flat screenshot.
 
-## What You Can Do
+## Use it
 
-| Feature | Description |
-|---|---|
-| **Import** | Paste HTML or import files into an editable slide workspace |
-| **Edit** | Modify slide content directly on the canvas |
-| **Save/Load** | Save your slides to "My Slides" and reload them later |
-| **Templates** | Publish simple templates from saved slides; preview and duplicate |
-| **Export** | Export to HTML, PDF, or PPTX (including backend PPTX job orchestration) |
+1. Open `slideeditor.html` in any modern browser. No install, no server, no build, no network.
+2. Import: paste HTML, choose an `.html` file (plus its `.css`), or choose a PNG/JPG.
+3. Pick a canvas preset — **16:9** or **1:1**.
+4. Export **PPTX** (primary) or **HTML**.
 
-## What's NOT In Scope (removed during extraction)
+- **HTML input** is the path that separates text from images: each positioned element becomes its own layer, and text nested inside a positioned container is split into its own editable text boxes.
+- **PNG/JPG input** becomes a single fit-centered picture layer. A raster has no structure to split into text (that would need OCR — out of scope).
 
-- Slide audit UI and telemetry
-- Template approval queues, SLAs, escalation, collaborator management, ownership transfer, archive/restore
-- Governance backend remnants in the frontend data client
+## How it's built
 
-## Import Structure
+The tool is one HTML file with the conversion engine inlined. There are two sources:
 
-The first commit preserved the original module under `imported/` so the extraction is complete before simplification. Current scope code is being moved out of `imported/` into a clean standalone app shell.
+- `src/shell.html` — the converter UI (preview, layer panel, presets, import/export).
+- `engine/*.ts` — the pure-TypeScript conversion engine (HTML/PNG import, PPTX/HTML export).
 
-**Next steps:** create standalone app shell → move scope code → delete stale governance/audit/chatbot dependencies → rebuild around the import/edit/save/export architecture.
+`scripts/build-bundle.mjs` strips the TypeScript types with node's built-in `stripTypeScriptTypes`, flattens the engine into one IIFE (`window.SlideEngine`), and inlines it into `src/shell.html` to produce `slideeditor.html`. **Zero dependencies** — no npm install.
 
-## Public / Private Setup
+```
+node scripts/build-bundle.mjs      # rebuild slideeditor.html after any engine or shell change
+```
 
-This repo follows the OliverCode public/private boundary standard.
+## Scope
 
-- Setup modes: `docs/SETUP_MODES.md`
-- Manual setup: `docs/MANUAL_SETUP.md`
-- Local runtime values: `.env.local`
-- Private operator files: `.secrets/*`
+- **Input:** HTML (primary) or PNG/JPG (single picture layer).
+- **Output:** PPTX (primary) or HTML.
+- **Canvas presets:** 16:9 and 1:1 only.
+- It is a **converter, not an editor** — no on-page drag, resize, or inline editing.
 
+Open work and deferred features (SVG input, HSL colors, multi-slide, line-height/letter-spacing in PPTX) are tracked in `BACKLOG.md`.
+
+## Repo layout
+
+```
+slideeditor.html          The deliverable — open this in a browser
+src/shell.html            Converter UI (source)
+engine/                   Pure-TS conversion engine (8 files)
+scripts/build-bundle.mjs  Zero-dep bundler
+BACKLOG.md                Open work and deferred features
+ARCHITECTURE.md           How the pieces fit
+```

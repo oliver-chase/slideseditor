@@ -1607,6 +1607,289 @@ function collectNestedTextLeaves(
   return leaves
 }
 
+// ---- Rasterization pipeline for designed graphics --------------------------------
+// Designed graphics (gradient bursts, gradient-clipped text, stacked cards/meters)
+// cannot be reproduced faithfully as native PPTX shapes/text — they overlap and break.
+// For a visually-rich slide we instead: (1) flatten ALL non-text visuals (background,
+// boxes, lines, meters, images) into ONE picture layer; (2) rasterize each gradient
+// text run to its own picture layer (native PPTX has no gradient-clipped text); and
+// (3) keep every plain-text run as an editable text box on top. Simple text-on-solid
+// slides skip this entirely and use the native path.
+
+const XHTML_NS = 'http://www.w3.org/1999/xhtml'
+
+function loadImageFromUrl(url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    if (typeof Image === 'undefined') { resolve(null); return }
+    let settled = false
+    const done = (v: HTMLImageElement | null) => { if (!settled) { settled = true; resolve(v) } }
+    const img = new Image()
+    img.onload = () => done(img)
+    img.onerror = () => done(null)
+    // Never hang the import if the image never fires load/error.
+    setTimeout(() => done(null), 8000)
+    img.src = url
+  })
+}
+
+// Draw a loaded SVG data URL onto a scaled canvas and return a PNG data URI.
+async function drawSvgToPng(svgUrl: string, w: number, h: number, scale: number): Promise<string | null> {
+  const img = await loadImageFromUrl(svgUrl)
+  if (!img) return null
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(w * scale))
+  canvas.height = Math.max(1, Math.round(h * scale))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.scale(scale, scale)
+  ctx.drawImage(img, 0, 0)
+  try { return canvas.toDataURL('image/png') } catch { return null }
+}
+
+function isVisibleEl(el: HTMLElement, win: Window): boolean {
+  const cs = win.getComputedStyle(el)
+  if (cs.display === 'none' || cs.visibility === 'hidden') return false
+  const op = parseFloat(cs.opacity || '1')
+  return !(Number.isFinite(op) && op <= 0.01)
+}
+
+function svgDataUrlFromSerializedXhtml(inner: string, w: number, h: number): string {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+    '<foreignObject width="100%" height="100%">' + inner + '</foreignObject></svg>'
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+}
+
+function isGradientTextElement(el: HTMLElement, win: Window): boolean {
+  const cs = win.getComputedStyle(el)
+  const clip = ((cs as unknown as Record<string, string>).webkitBackgroundClip || cs.backgroundClip || '')
+  return /gradient/i.test(cs.backgroundImage || '') && /text/i.test(clip)
+}
+
+function isMeaningfulBackground(cs: CSSStyleDeclaration): boolean {
+  const bg = cs.backgroundColor || ''
+  if (!bg || bg === 'transparent') return false
+  const m = bg.match(/rgba?\(([^)]+)\)/i)
+  if (m) {
+    const parts = m[1].split(',').map((v) => v.trim())
+    if (parts.length === 4 && parseFloat(parts[3]) === 0) return false
+  }
+  return true
+}
+
+// Render an element out of context with all computed styles inlined. This path honors
+// -webkit-background-clip:text (the in-context whole-slide render does not). For a
+// single-line run we force nowrap (cloning out of context can sub-pixel-reflow it);
+// for a run that already wraps to multiple lines we keep the source width so it wraps
+// identically (nowrap would collapse it to one line and the exporter would crush it).
+async function rasterizeElementInline(el: HTMLElement, win: Window, scale: number): Promise<string | null> {
+  const rect = el.getBoundingClientRect()
+  const cs0 = win.getComputedStyle(el)
+  const fontPx = parseFloat(cs0.fontSize || '16') || 16
+  const singleLine = rect.height <= fontPx * 1.6
+  const w = Math.max(1, Math.ceil(rect.width) + (singleLine ? 8 : 2))
+  const h = Math.max(1, Math.ceil(rect.height) + 4)
+  const clone = el.cloneNode(true) as HTMLElement
+  const srcNodes: HTMLElement[] = [el, ...Array.from(el.querySelectorAll<HTMLElement>('*'))]
+  const clNodes: HTMLElement[] = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))]
+  for (let i = 0; i < srcNodes.length; i += 1) {
+    const cs = win.getComputedStyle(srcNodes[i])
+    let css = ''
+    for (let j = 0; j < cs.length; j += 1) css += cs[j] + ':' + cs.getPropertyValue(cs[j]) + ';'
+    clNodes[i].setAttribute('style', css)
+  }
+  clone.style.margin = '0'
+  clone.style.position = 'static'
+  clone.style.inset = 'auto'
+  if (singleLine) clone.style.whiteSpace = 'nowrap'
+  const wrapWs = singleLine ? 'white-space:nowrap;' : ''
+  const wrap = document.createElementNS(XHTML_NS, 'div') as unknown as HTMLElement
+  wrap.setAttribute('style', 'width:' + w + 'px;height:' + h + 'px;overflow:visible;' + wrapWs)
+  wrap.appendChild(clone)
+  const inner = new XMLSerializer().serializeToString(wrap)
+  return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)
+}
+
+// Render the whole slide in context (keeps the page <style>, so boxes/meters/gradients
+// lay out exactly as designed) with every text glyph stripped, producing the flat art
+// layer. Returns a full-canvas PNG data URI, or null if the render fails.
+async function rasterizeArtLayer(
+  renderRoot: HTMLElement,
+  win: Window,
+  w: number,
+  h: number,
+  scale: number,
+): Promise<string | null> {
+  const sdoc = renderRoot.ownerDocument
+  if (!sdoc) return null
+  const clone = renderRoot.cloneNode(true) as HTMLElement
+  const walker = sdoc.createTreeWalker(clone, NodeFilter.SHOW_TEXT)
+  const textNodes: Node[] = []
+  while (walker.nextNode()) textNodes.push(walker.currentNode)
+  textNodes.forEach((t) => { t.nodeValue = '' })
+  const bodyCs = win.getComputedStyle(renderRoot)
+  let bodyCss = ''
+  for (let j = 0; j < bodyCs.length; j += 1) bodyCss += bodyCs[j] + ':' + bodyCs.getPropertyValue(bodyCs[j]) + ';'
+  const wrap = document.createElementNS(XHTML_NS, 'div') as unknown as HTMLElement
+  wrap.setAttribute('style', bodyCss + 'width:' + w + 'px;height:' + h + 'px;margin:0;position:relative;overflow:hidden;')
+  for (const st of Array.from(sdoc.querySelectorAll('style'))) wrap.appendChild(st.cloneNode(true))
+  for (const ch of Array.from(clone.childNodes)) wrap.appendChild(ch)
+  const inner = new XMLSerializer().serializeToString(wrap)
+  return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)
+}
+
+async function buildRasterizedSlide(
+  renderSnapshot: RenderSnapshot,
+  root: HTMLElement,
+  canvasWidth: number,
+  canvasHeight: number,
+  warnings: string[],
+): Promise<SlideComponent[] | null> {
+  const renderRoot = renderSnapshot.root
+  const win = renderRoot?.ownerDocument?.defaultView
+  if (!renderRoot || !win || typeof document === 'undefined') return null
+
+  // Ignore hidden elements everywhere (mirrors the native path's visibility filtering)
+  // so hidden source text/decoration never leaks into the output.
+  const allEls = Array.from(renderRoot.querySelectorAll<HTMLElement>('*')).filter((el) => isVisibleEl(el, win))
+  // Only take the rasterization path for genuinely rich designed graphics.
+  const gradientTextEls = allEls
+    .filter((el) => isGradientTextElement(el, win))
+    .filter((el, _i, arr) => !arr.some((other) => other !== el && other.contains(el)))
+  const gradientSet = new Set(gradientTextEls)
+  const hasGradientFill = allEls.some((el) => /gradient/i.test(win.getComputedStyle(el).backgroundImage || ''))
+  // A "visual box" is a non-text decorative element (card, bar, line, dot, meter):
+  // has a fill/border/shadow/gradient and carries no text of its own. Two or more of
+  // these signal a designed graphic (an infographic), even when the boxes are empty.
+  const visualBoxes = allEls.filter((el) => {
+    if (el === renderRoot || gradientSet.has(el) || hasOwnTextNode(el)) return false
+    const cs = win.getComputedStyle(el)
+    const shadow = (cs.boxShadow || '').trim()
+    const filter = (cs.filter || '').trim()
+    return isMeaningfulBackground(cs) || hasRenderedBorder(cs) || /gradient/i.test(cs.backgroundImage || '') ||
+      (shadow && shadow !== 'none') || /drop-shadow/i.test(filter)
+  })
+  if (!hasGradientFill && gradientTextEls.length === 0 && visualBoxes.length < 2) {
+    return null
+  }
+
+  const artUri = await rasterizeArtLayer(renderRoot, win, canvasWidth, canvasHeight, 2)
+  if (!artUri) return null // never emit a partial/broken result; fall back to native
+
+  // Text of an element excluding any gradient-text descendant (those become their own
+  // image). Inline emphasis (<strong>/<em>/<span>) stays part of the run.
+  const plainTextOf = (el: HTMLElement): string => {
+    let text = ''
+    const walker = (el.ownerDocument || document).createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    while (walker.nextNode()) {
+      let p = walker.currentNode.parentElement
+      let skip = false
+      while (p && p !== el) { if (gradientSet.has(p)) { skip = true; break } p = p.parentElement }
+      if (!skip) text += walker.currentNode.textContent
+    }
+    return text.replace(/\s+/g, ' ').trim()
+  }
+  // A plain-text run is the OUTERMOST non-gradient element that carries text: it must
+  // have its own text, not be (or sit inside) a gradient-text element, and have no
+  // ancestor that also carries its own text — otherwise a child with text (e.g. a
+  // <strong> inside a heading) would emit a second overlapping box with duplicate words.
+  const hasTextBearingAncestor = (el: HTMLElement): boolean => {
+    let p = el.parentElement
+    while (p && p !== renderRoot) {
+      if (!gradientSet.has(p) && hasOwnTextNode(p)) return true
+      p = p.parentElement
+    }
+    return false
+  }
+  const plainEls = allEls.filter(
+    (el) => hasOwnTextNode(el) && !gradientSet.has(el) &&
+      !gradientTextEls.some((g) => g !== el && g.contains(el)) && !hasTextBearingAncestor(el),
+  )
+
+  const components: SlideComponent[] = []
+  const renderRootForMeasure = renderSnapshot.root || root
+  const emitTextBox = (el: HTMLElement, idPrefix: string, seq: number) => {
+    const text = plainTextOf(el)
+    if (!text) return false
+    const measured = measureNodeRect(el, renderRootForMeasure)
+    components.push({
+      id: idPrefix + seq,
+      type: 'text',
+      sourceLabel: getNodeLabel(el),
+      x: asCanonicalDimension(measured.x ?? 0),
+      y: asCanonicalDimension(measured.y ?? 0),
+      width: asCanonicalDimension(measured.width ?? 0),
+      height: asCanonicalDimensionOptional(measured.height ?? 0),
+      content: escapeHtmlText(text),
+      style: extractStyle(parseInlineStyle(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
+      locked: false,
+      visible: true,
+    })
+    return true
+  }
+  components.push({
+    id: 'raster-art',
+    type: 'panel',
+    sourceLabel: 'artwork',
+    x: 0,
+    y: 0,
+    width: canvasWidth,
+    height: canvasHeight,
+    content: '<img src="' + artUri + '" />',
+    style: {},
+    locked: true,
+    visible: true,
+  })
+
+  let gradSeq = 0
+  let gradTextSeq = 0
+  for (const g of gradientTextEls) {
+    const uri = await rasterizeElementInline(g, win, 2)
+    if (!uri) {
+      // Never silently drop a run: if its image failed, keep the words as an editable
+      // text box (loses the gradient look, but the content survives).
+      if (emitTextBox(g, 'raster-gradtext-', gradTextSeq + 1)) gradTextSeq += 1
+      continue
+    }
+    const measured = measureNodeRect(g, renderRootForMeasure)
+    gradSeq += 1
+    components.push({
+      id: 'raster-grad-' + gradSeq,
+      type: 'logo',
+      sourceLabel: (getNodeLabel(g) || 'gradient text'),
+      x: asCanonicalDimension(measured.x ?? 0),
+      y: asCanonicalDimension(measured.y ?? 0),
+      width: asCanonicalDimension(measured.width ?? 0),
+      height: asCanonicalDimensionOptional(measured.height ?? 0),
+      content: '<img src="' + uri + '" />',
+      style: {},
+      locked: false,
+      visible: true,
+    })
+  }
+
+  let textSeq = 0
+  for (const el of plainEls) {
+    if (emitTextBox(el, 'raster-text-', textSeq + 1)) textSeq += 1
+  }
+
+  warnings.push(
+    'Rich graphic: flattened background and shapes into 1 artwork layer' +
+    (gradSeq > 0 ? ', ' + gradSeq + ' gradient-text image' + (gradSeq === 1 ? '' : 's') : '') +
+    ', ' + (textSeq + gradTextSeq) + ' editable text box' + (textSeq + gradTextSeq === 1 ? '' : 'es') + '.',
+  )
+  if (gradTextSeq > 0) warnings.push(gradTextSeq + ' gradient-text run(s) could not be rasterized and were kept as plain editable text.')
+  warnings.push('Rasterized layers use the fonts available at import; upload/inline the original fonts for exact type.')
+  return components
+}
+
+function escapeHtmlText(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
 export async function convertHtmlToSlideComponents(html: string): Promise<SlideImportResult> {
   const warnings: string[] = []
   const buildEmergencyFallbackImportResult = (reason: string): SlideImportResult => {
@@ -1850,13 +2133,20 @@ export async function convertHtmlToSlideComponents(html: string): Promise<SlideI
       warnings.push('No importable child layers were detected; imported the slide root as a locked fallback layer.')
     }
 
+    // For visually-rich designed graphics (gradients, gradient text, stacked cards),
+    // flatten non-text visuals into one artwork picture + gradient-text images +
+    // editable text boxes, instead of the native shape/text path that overlaps and
+    // breaks. Returns null for simple text-on-solid slides, which use the native path.
+    const rasterComponents = await buildRasterizedSlide(renderSnapshot, root, sourceCanvasWidth, sourceCanvasHeight, warnings)
+    const components: SlideComponent[] = rasterComponents ? rasterComponents.slice() : []
+
     // In absolute mode, split text nested inside a positioned container into its own
     // text-box layers (each keeps its font/size/color) instead of collapsing the whole
     // container into one uniform text blob. The container is then imported as a
     // background/shape layer with the extracted text removed.
     const strippedIdsByContainer = new Map<string, Set<string>>()
-    let nodesForBuild = nodes
-    if (importMode === 'absolute') {
+    let nodesForBuild = rasterComponents ? [] : nodes
+    if (!rasterComponents && importMode === 'absolute') {
       const absoluteIdSet = new Set(absoluteNodes.map((entry) => entry.getAttribute('data-import-node-id') || ''))
       const extraNodes: HTMLElement[] = []
       const seenExtra = new Set<string>()
@@ -1890,7 +2180,6 @@ export async function convertHtmlToSlideComponents(html: string): Promise<SlideI
       }
     }
 
-    const components: SlideComponent[] = []
     for (let index = 0; index < nodesForBuild.length; index += 1) {
       const node = nodesForBuild[index]
       const styleMap = parseInlineStyle(node.getAttribute('style') || '')

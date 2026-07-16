@@ -50,6 +50,9 @@
   #canvas { position: relative; overflow: hidden; transform-origin: top left; }
   /* Preview layers are read-only; conversion output is edited in PowerPoint. */
   .comp { position: absolute; overflow: hidden; }
+  /* Rasterized layers are 2x for crispness; constrain them to the component box so the
+     preview matches the exported geometry (the exporter already fits images to the box). */
+  .comp img { display: block; width: 100%; height: 100%; object-fit: contain; }
   .selbox { position: absolute; outline: 2px solid var(--accent-2); pointer-events: none; z-index: 5; }
   aside {
     flex: 0 0 300px; background: var(--panel); border-left: 1px solid var(--line);
@@ -90,7 +93,8 @@
 <header>
   <h1>Slides Converter</h1>
   <div class="seg" id="presetSeg">
-    <button data-preset="16-9" class="active">16:9</button>
+    <button data-preset="native" class="active">Native</button>
+    <button data-preset="16-9">16:9</button>
     <button data-preset="1-1">1:1</button>
   </div>
   <button class="btn" id="importBtn">Import</button>
@@ -132,9 +136,16 @@
   const E = window.SlideEngine;
   const PRESETS = { '16-9': { width: 1920, height: 1080 }, '1-1': { width: 1080, height: 1080 } };
   const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+  // 'native' keeps the source's own dimensions so designs never distort; the fixed
+  // presets are opt-in reshapes.
+  function presetDims() {
+    if (state.preset === 'native') return state.sourceCanvas || { width: state.canvas.width, height: state.canvas.height };
+    return PRESETS[state.preset] || PRESETS['16-9'];
+  }
 
   const state = {
-    preset: '16-9',
+    preset: 'native',
+    sourceCanvas: null,
     canvas: { width: 1920, height: 1080, background: undefined },
     components: [],
     highlightId: null,
@@ -299,8 +310,11 @@
       const result = await E.convertHtmlToSlideComponents(effectiveHtml);
       state.components = result.components || [];
       const c = result.canvas || {};
+      // Preserve the source's native size on import (no distortion); presets are opt-in.
       state.canvas = { width: c.width || state.canvas.width, height: c.height || state.canvas.height, background: c.background };
-      applyPreset(state.preset, true);
+      state.sourceCanvas = { width: state.canvas.width, height: state.canvas.height };
+      state.preset = 'native';
+      document.querySelectorAll('#presetSeg button').forEach((b) => b.classList.toggle('active', b.dataset.preset === 'native'));
       state.highlightId = null;
       renderPreview();
       const parseCheck = E.validateParsedResult(result);
@@ -332,7 +346,9 @@
   async function importImageFile(file) {
     const dataUrl = await readAsDataUrl(file);
     const nat = await naturalSize(dataUrl);
-    const p = PRESETS[state.preset];
+    // A raster defines its own size; import at native (fixed presets remain opt-in).
+    if (state.preset === 'native') state.sourceCanvas = { width: nat.w || 1920, height: nat.h || 1080 };
+    const p = presetDims();
     // Fit the image inside the slide preserving aspect, centered.
     const iw = nat.w || p.width, ih = nat.h || p.height;
     const scale = Math.min(p.width / iw, p.height / ih);
@@ -367,7 +383,7 @@
 
   // ---- Preset ----
   function applyPreset(preset, silent) {
-    const p = PRESETS[preset];
+    const p = preset === 'native' ? state.sourceCanvas : PRESETS[preset];
     if (!p) return;
     const prev = state.canvas;
     if (state.components.length && (prev.width !== p.width || prev.height !== p.height)) {

@@ -1,7 +1,7 @@
 # Architecture — Slides Converter
 
-Status: Active
-Last updated: 2026-07-16
+Status: Stable
+Last updated: 2026-07-16 (REPAIR-1, SCALE-1, RASTER-1, drag-and-drop, Native preset)
 Owner: Engineering
 
 ## Overview
@@ -44,16 +44,16 @@ No npm install, no bundler dependency, no deploy.
 
 ## Conversion flow
 
-1. **Import** (`html-import.ts`) — parse the HTML, render it in a hidden sandboxed iframe, and read `getComputedStyle` / `getBoundingClientRect` to place each positioned element as its own component. Text nested inside a positioned container (without its own position) is split into separate editable text boxes; inline emphasis (`<span>`/`<strong>`/`<em>`) stays atomic. PNG/JPG imports as one fit-centered picture layer.
-2. **Preview** (`shell.html`) — read-only render at the chosen preset (16:9 or 1:1) plus a converted-layers panel classifying each layer as text, picture, or shape.
-3. **Export** (`pptx-export.ts` / `html-export.ts`) — emit a native PPTX (text runs as `<a:t>`, images as `<p:pic>` with media parts and rels, gradients/borders as shape fills) or a standalone HTML file.
+1. **Import** (`html-import.ts`) — parse the HTML, render it in a hidden sandboxed iframe, and read `getComputedStyle` / `getBoundingClientRect` to place each positioned element as its own component. Text nested inside a positioned container (without its own position) is split into separate editable text boxes; inline emphasis (`<span>`/`<strong>`/`<em>`) stays atomic. For visually-rich designed graphics (gradient fills, gradient-clipped text, stacked cards/bars), use a rasterization path: flatten all non-text visuals into one artwork PNG, rasterize each gradient-text run to its own PNG, and keep plain text as editable boxes. Simple text-on-solid slides stay on the native text/shape path. PNG/JPG imports as one fit-centered picture layer.
+2. **Preview** (`shell.html`) — read-only render at the chosen preset (**Native** to preserve source dimensions, or **16:9**/**1:1** to reshape) plus a converted-layers panel classifying each layer as text, picture, or shape.
+3. **Export** (`pptx-export.ts` / `html-export.ts`) — emit a native PPTX (text runs as `<a:t>`, images as `<p:pic>` with media parts and rels, gradients/borders as shape fills; slide sized at true 96dpi so font and geometry scale agree) or a standalone HTML file.
 
 ## Scope
 
 - **Input:** HTML (primary — enables text/image separation) or PNG/JPG (single picture layer).
 - **Output:** PPTX (primary) or HTML.
-- **Canvas presets:** 16:9 and 1:1 only.
-- Converter, not editor: no on-page drag/resize/inline-edit.
+- **Canvas presets:** Native (preserve source dimensions), 16:9, and 1:1 (reshape options).
+- Converter, not editor: no on-page drag/resize/inline-edit. Import via file picker or drag-and-drop.
 
 ## Key constraints
 

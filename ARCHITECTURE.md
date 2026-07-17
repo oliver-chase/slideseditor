@@ -1,7 +1,7 @@
 # Architecture — Slides Converter
 
 Status: Stable
-Last updated: 2026-07-16 (REPAIR-1, SCALE-1, RASTER-1, drag-and-drop, Native preset)
+Last updated: 2026-07-17 (CANVAS-ROOT-1); 2026-07-16 (REPAIR-1, SCALE-1, RASTER-1, drag-and-drop, Native preset)
 Owner: Engineering
 
 ## Overview

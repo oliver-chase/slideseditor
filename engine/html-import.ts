@@ -1134,6 +1134,12 @@ function getCanvasRoot(doc: Document): HTMLElement | null {
     if (best?.candidate) return best.candidate
   }
 
+  // Only a div/section/article/main explicitly marked as a slide/deck/canvas/frame/artboard
+  // may stand in for the real page root — an unmarked sized box (a card, a tag, a tile) is
+  // slide CONTENT, never the slide itself. Without this guard, any inner element with an
+  // explicit width+height whose aspect ratio happens to sit near 16:9 could outscore the
+  // real page canvas on ratio alone and get treated as the whole slide, silently clipping
+  // everything outside it — reproduced with a real deck body containing multiple sized cards.
   const scoredCandidates = Array.from(doc.body.querySelectorAll<HTMLElement>('div,section,article,main'))
     .map((candidate) => {
       const styleMap = parseInlineStyle(candidate.getAttribute('style') || '')
@@ -1141,15 +1147,17 @@ function getCanvasRoot(doc: Document): HTMLElement | null {
       const height = parsePositivePx(styleMap.height ?? candidate.getAttribute('height'))
       if (!width || !height) return { candidate, score: 0 }
 
+      const className = (candidate.className || '').toString().toLowerCase()
+      const isSemanticSlideMarker = /slide|deck|canvas|presentation|frame|artboard/.test(className)
+      if (!isSemanticSlideMarker) return { candidate, score: 0 }
+
       const ratio = width / height
       const ratioDelta = Math.abs(ratio - CANVAS_TARGET_ASPECT_RATIO)
       const ratioScore = Math.max(0, 1 - Math.min(1, ratioDelta / 0.9))
       const areaScore = width * height
-      const className = (candidate.className || '').toString().toLowerCase()
-      const semanticBoost = /slide|deck|canvas|presentation|frame|artboard/.test(className) ? 1_000_000 : 0
       return {
         candidate,
-        score: areaScore * ratioScore + semanticBoost,
+        score: areaScore * ratioScore + 1_000_000,
       }
     })
     .filter((entry) => entry.score > 0)

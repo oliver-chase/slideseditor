@@ -6,7 +6,11 @@ Status date: 2026-07-16. The product is a **local single-file HTML converter**: 
 
 - Input: HTML (primary, enables text/image separation) or PNG/JPG (single picture layer — a raster has no structure to split; text extraction would need OCR, out of scope).
 - Output: PPTX (primary) + HTML.
-- Canvas presets: 16:9 and 1:1 only. No per-platform size wiring.
+- Canvas presets: 16:9 and 1:1 only. No per-platform size wiring. **Superseded:** a
+  third preset, Native, was added as the default — it keeps the source's own
+  dimensions on import so a design never distorts, and the two fixed sizes stay
+  opt-in. This line undercounted the shipped UI; `src/shell.html`'s preset
+  buttons are the source of truth.
 - The page is a converter, not an editor. No on-page drag/resize/inline-edit/drag-drop (removed as overengineering).
 
 ## Build state

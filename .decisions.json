@@ -1,0 +1,6 @@
+{
+  "sourceDirs": ["engine", "src", "scripts"],
+  "testDirs": [],
+  "extensions": [".ts", ".mjs"],
+  "docDirs": ["."]
+}

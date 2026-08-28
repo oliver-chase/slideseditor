@@ -2,48 +2,125 @@
 
 A local, single-file tool that converts HTML slides into editable PowerPoint decks.
 
-HTML is often the fastest way to build a precise slide design, but moving that design into PowerPoint usually means exporting it as a flat image and losing the ability to edit anything inside it. Slides Converter preserves the structure instead: text becomes real, editable PowerPoint text boxes, and images, gradients, and other visual elements become their own movable, resizable layers.
+HTML is often the fastest way to build a precise slide design. The problem comes when that design needs to become a PowerPoint deck: exporting the slide as an image preserves the look but loses the structure. Text can no longer be edited, and individual visual elements can no longer be moved or resized.
 
-The browser is only the conversion step. The editing happens where it belongs, in PowerPoint — the page itself is a read-only preview and a breakdown of the converted layers.
+Slides Converter preserves that structure. Text becomes real, editable PowerPoint text boxes. Images, gradients, and other visual elements become their own movable, resizable layers.
 
-It is for anyone who designs a slide in HTML and wants it as a native, editable PowerPoint deck instead of a flat screenshot.
+The browser is only the conversion step. The actual editing happens in PowerPoint, where the converted deck can be changed like any other native presentation.
+
+It is built for anyone who designs slides in HTML and needs the result as a native, editable PowerPoint deck instead of a flat screenshot.
 
 ## Convert a slide
 
-Open `slideeditor.html` in any modern browser. It runs entirely locally: no install, no server, no build step, no network connection.
+Open `slideeditor.html` in any modern browser.
 
-Import a slide by pasting HTML directly, choosing an `.html` file and its `.css`, or dragging a file onto the page. Pick a canvas: **Native** (the default, keeps the source's own dimensions so nothing distorts) or a fixed **16:9** / **1:1**. Export as **PPTX** (the primary output) or **HTML**.
+It runs entirely locally:
 
-HTML input is what makes the conversion possible: a positioned element becomes its own layer, and text inside one is split into its own editable text box. A PNG or JPG has no such structure to read, so it imports as a single picture layer rather than attempting unreliable text extraction — that would need OCR, which is out of scope.
+* No installation
+* No server
+* No build step
+* No network connection
 
-## How it's built
+Import a slide in any of three ways:
 
-The deliverable is one HTML file that runs entirely offline. The source is split in two and bundled together at build time: `src/shell.html` is the converter UI, and `engine/` is the pure-TypeScript conversion logic — HTML/PNG import, PPTX/HTML export, eight files. `scripts/build-bundle.mjs` strips the TypeScript types, flattens the engine into one `window.SlideEngine` IIFE, and inlines it into the shell to produce `slideeditor.html`. Zero dependencies; no npm install.
+* Paste the HTML directly into the tool.
+* Choose an `.html` file and its `.css`.
+* Drag a file onto the page.
 
+Then choose the canvas:
+
+* Native — the default; keeps the source's original dimensions so the slide does not distort.
+* 16:9 — standard widescreen presentation.
+* 1:1 — square canvas.
+
+Export the result as:
+
+* PPTX — the primary output, with editable PowerPoint layers.
+* HTML — useful for sharing or inspecting the converted result.
+
+## Why HTML works
+
+The converter can preserve editability because HTML already describes a slide as separate elements.
+
+A positioned HTML element becomes its own PowerPoint layer. Text inside that element becomes its own editable text box. Images, gradients, and shapes are converted into their corresponding PowerPoint layers.
+
+A PNG or JPG has no underlying structure to preserve. It therefore imports as one picture layer.
+
+The converter does not attempt to extract text from images with OCR. Reliable OCR would be a separate problem and is outside the scope of this tool.
+
+## How it is built
+
+The deliverable is one HTML file that runs entirely offline.
+
+The source is kept separate for development:
+
+```text
+src/shell.html
 ```
-node scripts/build-bundle.mjs      # rebuild slideeditor.html after any engine or shell change
+
+contains the converter interface, while:
+
+```text
+engine/
+```
+
+contains the pure-TypeScript conversion engine for HTML/PNG import and PPTX/HTML export.
+
+The engine is eight files. At build time, `scripts/build-bundle.mjs` strips the TypeScript types, combines the engine into one `window.SlideEngine` IIFE, and inlines it into the shell.
+
+The result is:
+
+```text
+slideeditor.html
+```
+
+There are zero runtime dependencies and no `npm install` required to use the deliverable.
+
+After changing the engine or shell, rebuild it with:
+
+```bash
+node scripts/build-bundle.mjs
 ```
 
 ## What it supports
 
-- HTML input, converted into editable PowerPoint text boxes, images, and shapes.
-- PNG/JPG input, imported as a single image layer.
-- PPTX export as the primary output, plus HTML export for sharing or inspection.
-- Native, 16:9, and 1:1 canvas presets.
+* HTML input — converted into editable PowerPoint text boxes, images, and shapes.
+* PNG/JPG input — imported as a single image layer.
+* PPTX export — the primary output.
+* HTML export — for sharing or inspection.
+* Native canvas — preserves the source dimensions.
+* 16:9 canvas — standard widescreen format.
+* 1:1 canvas — square format.
 
-It is a converter, not an editor. There is no on-page drag, resize, or inline editing by design — layout and presentation work happen in PowerPoint, not here.
+## What it does not do
 
-Open work and deferred features (SVG input, HSL colors, multi-slide, line-height/letter-spacing in PPTX) are tracked in `BACKLOG.md`.
+Slides Converter is a converter, not an editor.
+
+There is deliberately no on-page drag, resize, or inline editing. The browser converts the source; PowerPoint is where the resulting slide is edited and presented.
+
+Open work and deferred features are tracked in [`BACKLOG.md`](BACKLOG.md), including:
+
+* SVG input
+* HSL colors
+* Multi-slide conversion
+* Line-height in PPTX
+* Letter-spacing in PPTX
 
 ## Repo layout
 
-The repository is intentionally small.
+The repository is intentionally small:
 
-```
+```text
 slideeditor.html          The deliverable — open this in a browser
-src/shell.html            Converter UI (source)
-engine/                   Pure-TS conversion engine
-scripts/build-bundle.mjs  Zero-dep bundler
+src/shell.html            Converter UI source
+engine/                   Pure-TypeScript conversion engine
+scripts/build-bundle.mjs  Zero-dependency bundler
 BACKLOG.md                Open work and deferred features
 ARCHITECTURE.md           How the pieces fit
 ```
+
+## About
+
+A local, single-file tool that converts HTML slides into editable PowerPoint decks.
+
+Open `slideeditor.html`, import your slide, and export a `.pptx`. Text becomes real editable text boxes, while images, gradients, and other visual elements become separate movable and resizable PowerPoint layers.

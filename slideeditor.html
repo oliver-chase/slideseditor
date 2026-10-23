@@ -157,14 +157,6 @@ function cloneCanvas(canvas             )              {
   return { ...canvas }
 }
 
-function cloneSlide(slide       )        {
-  return {
-    ...slide,
-    elements: Array.isArray(slide.elements) ? slide.elements.map(cloneComponent) : [],
-    ...(slide.background?.fill ? { background: { fill: slide.background.fill } } : {}),
-  }
-}
-
 function buildSlideFromCanvas(input   
             
                      
@@ -355,14 +347,6 @@ function applyLayoutConstraintToComponents(input
   })
 }
 
-function adaptComponentsToResponsiveCanvas(input   
-                             
-                         
-                              
- )                   {
-  return adaptComponentsToResponsiveCanvasWithWarnings(input).components
-}
-
 function adaptComponentsToResponsiveCanvasWithWarnings(input   
                              
                          
@@ -431,15 +415,6 @@ function adaptComponentsToResponsiveCanvasWithWarnings(input
   return { components, warnings: Array.from(new Set(warnings)) }
 }
 
-function getSlideDocumentActiveSlide(document               , slideId                )               {
-  if (!Array.isArray(document.deck.slides) || document.deck.slides.length === 0) return null
-  if (slideId) {
-    const matched = document.deck.slides.find((slide) => slide.id === slideId)
-    if (matched) return matched
-  }
-  return document.deck.slides[0] || null
-}
-
 function createSlideDeck(input   
              
                      
@@ -469,190 +444,6 @@ function createSlideDocument(input
     warnings: Array.isArray(input.warnings) ? [...input.warnings] : [],
     ...(input.theme ? { theme: cloneTheme(input.theme) } : {}),
   }
-}
-
-function slideDocumentToImportResult(document               , slideId                )                    {
-  const slide = getSlideDocumentActiveSlide(document, slideId)
-  return {
-    document,
-    canvas: {
-      width: document.deck.width,
-      height: document.deck.height,
-      ...(slide?.background?.fill ? { background: slide.background.fill } : {}),
-    },
-    components: Array.isArray(slide?.elements) ? slide.elements.map(cloneComponent) : [],
-    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
-  }
-}
-
-function ensureSlideDocument(input   
-                                 
-                     
-                              
-                     
-                  
-                    
- )                {
-  if (input.document) return input.document
-  return createSlideDocument({
-    id: input.slideId,
-    canvas: input.canvas,
-    components: input.components,
-    warnings: input.warnings,
-    theme: input.theme,
-  })
-}
-
-function syncSlideDocument(input   
-                                 
-                     
-                              
-                     
-                  
-                    
- )                {
-  const version = Number.isFinite(input.document?.version) ? Number(input.document?.version) : 1
-  const activeSlideId = input.slideId || input.document?.deck.slides[0]?.id || 'slide-1'
-  const nextComponents =
-    input.document && (input.document.deck.width !== input.canvas.width || input.document.deck.height !== input.canvas.height)
-      ? input.components.map((component) => reflowPinnedComponent(component, input.canvas))
-      : input.components
-  const currentSlides = Array.isArray(input.document?.deck.slides)
-    ? input.document?.deck.slides.map(cloneSlide)
-    : []
-  const nextSlide = buildSlideFromCanvas({
-    id: activeSlideId,
-    canvas: input.canvas,
-    components: nextComponents,
-  })
-  let replaced = false
-  const nextSlides = currentSlides.map((slide) => {
-    if (slide.id !== activeSlideId) return slide
-    replaced = true
-    return nextSlide
-  })
-  if (!replaced) nextSlides.push(nextSlide)
-  return {
-    version,
-    deck: {
-      id: input.document?.deck.id || activeSlideId || 'deck-1',
-      width: input.canvas.width,
-      height: input.canvas.height,
-      slides: nextSlides,
-    },
-    warnings: Array.isArray(input.warnings) ? [...input.warnings] : [],
-    ...(input.theme || input.document?.theme ? { theme: cloneTheme(input.theme || input.document?.theme) } : {}),
-  }
-}
-
-function appendSlideToDocument(input   
-                         
-                 
-                     
-                              
- )                {
-  return {
-    version: input.document.version,
-    deck: {
-      ...input.document.deck,
-      slides: [
-        ...input.document.deck.slides.map(cloneSlide),
-        buildSlideFromCanvas({
-          id: input.slideId,
-          canvas: input.canvas,
-          components: input.components,
-        }),
-      ],
-    },
-    warnings: Array.isArray(input.document.warnings) ? [...input.document.warnings] : [],
-    ...(input.document.theme ? { theme: cloneTheme(input.document.theme) } : {}),
-  }
-}
-
-function duplicateSlideInDocument(document               , sourceSlideId        , nextSlideId        )                {
-  const slides = document.deck.slides.map(cloneSlide)
-  const sourceIndex = slides.findIndex((slide) => slide.id === sourceSlideId)
-  if (sourceIndex < 0) return document
-  const sourceSlide = slides[sourceIndex]
-  const duplicate        = {
-    ...sourceSlide,
-    id: nextSlideId,
-    elements: sourceSlide.elements.map((component, index) => ({
-      ...cloneComponent(component),
-      id: `${component.id}-copy-${index + 1}`,
-    })),
-  }
-  slides.splice(sourceIndex + 1, 0, duplicate)
-  return {
-    version: document.version,
-    deck: {
-      ...document.deck,
-      slides,
-    },
-    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
-    ...(document.theme ? { theme: cloneTheme(document.theme) } : {}),
-  }
-}
-
-function deleteSlideFromDocument(document               , slideId        )                {
-  const nextSlides = document.deck.slides.filter((slide) => slide.id !== slideId).map(cloneSlide)
-  return {
-    version: document.version,
-    deck: {
-      ...document.deck,
-      slides: nextSlides.length > 0 ? nextSlides : [buildSlideFromCanvas({
-        id: 'slide-1',
-        canvas: {
-          width: document.deck.width,
-          height: document.deck.height,
-        },
-        components: [],
-      })],
-    },
-    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
-    ...(document.theme ? { theme: cloneTheme(document.theme) } : {}),
-  }
-}
-
-function reorderSlideInDocument(document               , slideId        , direction               )                {
-  const slides = document.deck.slides.map(cloneSlide)
-  const index = slides.findIndex((slide) => slide.id === slideId)
-  if (index < 0) return document
-  const targetIndex = direction === 'up' ? index - 1 : index + 1
-  if (targetIndex < 0 || targetIndex >= slides.length) return document
-  const [moved] = slides.splice(index, 1)
-  slides.splice(targetIndex, 0, moved)
-  return {
-    version: document.version,
-    deck: {
-      ...document.deck,
-      slides,
-    },
-    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
-    ...(document.theme ? { theme: cloneTheme(document.theme) } : {}),
-  }
-}
-
-function readSlideDocumentFromMetadata(metadata                                            )                       {
-  const raw = metadata && typeof metadata === 'object' ? (metadata                           ).slide_document : null
-  if (!raw || typeof raw !== 'object') return null
-  const candidate = raw                 
-  if (!candidate.deck || !Array.isArray(candidate.deck.slides)) return null
-  return candidate
-}
-
-function slideRecordToImportResult(slide             )                    {
-  const persisted = readSlideDocumentFromMetadata(slide.metadata)
-  const document = persisted || createSlideDocument({
-    id: slide.id,
-    canvas: slide.canvas,
-    components: slide.components,
-    warnings: Array.isArray(slide.metadata?.warnings) ? slide.metadata.warnings             : [],
-  })
-  const activeDocumentSlideId = typeof slide.metadata?.active_document_slide_id === 'string'
-    ? slide.metadata.active_document_slide_id
-    : null
-  return slideDocumentToImportResult(document, activeDocumentSlideId)
 }
 
 // ===== import-validation.ts =====
@@ -3195,36 +2986,6 @@ function componentToHtml(component                )         {
   return `<div ${attrs.join(' ')}>${body}</div>`
 }
 
-function buildRevealDeckStyles(width        , height        )         {
-  return [
-    ':root{color-scheme:light;}',
-    'html,body{margin:0;padding:0;background:var(--color-bg-page);}',
-    '.reveal{background:var(--color-bg-page);}',
-    `.reveal .slides section{width:${width}px;height:${height}px;}`,
-    '.reveal .slides section{position:relative;overflow:hidden;margin:0 auto;}',
-    '.reveal .slides section .slide-canvas{position:relative;width:100%;height:100%;overflow:hidden;}',
-    '.reveal .controls,.reveal .progress{color:var(--color-text-secondary);}',
-  ].join('')
-}
-
-function buildRevealSection(slide                                         , deck                       )         {
-  const background = slide.background?.fill || 'var(--color-bg-card)'
-  const sectionAttrs = [
-    `data-slide-root="1"`,
-    `data-oliver-slide-id="${escapeAttribute(slide.id)}"`,
-    `data-oliver-export-version="1"`,
-    `data-background-color="${escapeAttribute(background)}"`,
-  ]
-  const content = slide.elements.map(componentToHtml).join('\n')
-  return [
-    `<section ${sectionAttrs.join(' ')} style="width:${deck.width}px;height:${deck.height}px;">`,
-    `<div class="slide-canvas" style="position:relative;width:${deck.width}px;height:${deck.height}px;overflow:hidden;background:${escapeAttribute(background)};">`,
-    content,
-    '</div>',
-    '</section>',
-  ].join('\n')
-}
-
 function convertSlideComponentsToHtml(input   
                      
                               
@@ -3285,46 +3046,6 @@ function convertSlideDocumentToHtml(input
       slideId: input.metadata?.slideId || primarySlide?.id || input.document.deck.id,
     },
   })
-}
-
-function convertSlideDocumentToRevealHtml(input   
-                         
-              
-                   
-                       
-                  
-   
- )         {
-  const { document, metadata } = input
-  const title = metadata?.title || 'Slides Reveal Export'
-  const source = metadata?.source || 'slides-converter'
-  const exportedAt = metadata?.exportedAt || new Date().toISOString()
-  const sections = document.deck.slides.map((slide) => buildRevealSection(slide, document.deck)).join('\n')
-
-  return [
-    '<!doctype html>',
-    '<html>',
-    '<head>',
-    '<meta charset="utf-8" />',
-    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-    `<meta name="oliver-export-source" content="${escapeAttribute(source)}" />`,
-    `<meta name="oliver-exported-at" content="${escapeAttribute(exportedAt)}" />`,
-    `<title>${escapeAttribute(title)}</title>`,
-    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.css" />',
-    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/theme/white.css" />',
-    `<style>${buildRevealDeckStyles(document.deck.width, document.deck.height)}</style>`,
-    '</head>',
-    '<body>',
-    '<div class="reveal">',
-    '<div class="slides">',
-    sections,
-    '</div>',
-    '</div>',
-    '<script src="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.js"><\/script>',
-    '<script>window.Reveal&&Reveal.initialize({hash:true,controls:true,progress:true,center:false,transition:"slide"});<\/script>',
-    '</body>',
-    '</html>',
-  ].join('\n')
 }
 
 // ===== pptx-export.ts =====

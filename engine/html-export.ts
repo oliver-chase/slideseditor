@@ -117,36 +117,6 @@ function componentToHtml(component: SlideComponent): string {
   return `<div ${attrs.join(' ')}>${body}</div>`
 }
 
-function buildRevealDeckStyles(width: number, height: number): string {
-  return [
-    ':root{color-scheme:light;}',
-    'html,body{margin:0;padding:0;background:var(--color-bg-page);}',
-    '.reveal{background:var(--color-bg-page);}',
-    `.reveal .slides section{width:${width}px;height:${height}px;}`,
-    '.reveal .slides section{position:relative;overflow:hidden;margin:0 auto;}',
-    '.reveal .slides section .slide-canvas{position:relative;width:100%;height:100%;overflow:hidden;}',
-    '.reveal .controls,.reveal .progress{color:var(--color-text-secondary);}',
-  ].join('')
-}
-
-function buildRevealSection(slide: SlideDocument['deck']['slides'][number], deck: SlideDocument['deck']): string {
-  const background = slide.background?.fill || 'var(--color-bg-card)'
-  const sectionAttrs = [
-    `data-slide-root="1"`,
-    `data-oliver-slide-id="${escapeAttribute(slide.id)}"`,
-    `data-oliver-export-version="1"`,
-    `data-background-color="${escapeAttribute(background)}"`,
-  ]
-  const content = slide.elements.map(componentToHtml).join('\n')
-  return [
-    `<section ${sectionAttrs.join(' ')} style="width:${deck.width}px;height:${deck.height}px;">`,
-    `<div class="slide-canvas" style="position:relative;width:${deck.width}px;height:${deck.height}px;overflow:hidden;background:${escapeAttribute(background)};">`,
-    content,
-    '</div>',
-    '</section>',
-  ].join('\n')
-}
-
 export function convertSlideComponentsToHtml(input: {
   canvas: SlideCanvas
   components: SlideComponent[]
@@ -207,44 +177,4 @@ export function convertSlideDocumentToHtml(input: {
       slideId: input.metadata?.slideId || primarySlide?.id || input.document.deck.id,
     },
   })
-}
-
-export function convertSlideDocumentToRevealHtml(input: {
-  document: SlideDocument
-  metadata?: {
-    source?: string
-    exportedAt?: string
-    title?: string
-  }
-}): string {
-  const { document, metadata } = input
-  const title = metadata?.title || 'Slides Reveal Export'
-  const source = metadata?.source || 'slides-converter'
-  const exportedAt = metadata?.exportedAt || new Date().toISOString()
-  const sections = document.deck.slides.map((slide) => buildRevealSection(slide, document.deck)).join('\n')
-
-  return [
-    '<!doctype html>',
-    '<html>',
-    '<head>',
-    '<meta charset="utf-8" />',
-    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-    `<meta name="oliver-export-source" content="${escapeAttribute(source)}" />`,
-    `<meta name="oliver-exported-at" content="${escapeAttribute(exportedAt)}" />`,
-    `<title>${escapeAttribute(title)}</title>`,
-    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.css" />',
-    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/theme/white.css" />',
-    `<style>${buildRevealDeckStyles(document.deck.width, document.deck.height)}</style>`,
-    '</head>',
-    '<body>',
-    '<div class="reveal">',
-    '<div class="slides">',
-    sections,
-    '</div>',
-    '</div>',
-    '<script src="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.js"></script>',
-    '<script>window.Reveal&&Reveal.initialize({hash:true,controls:true,progress:true,center:false,transition:"slide"});</script>',
-    '</body>',
-    '</html>',
-  ].join('\n')
 }

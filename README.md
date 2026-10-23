@@ -66,7 +66,7 @@ engine/
 
 contains the pure-TypeScript conversion engine for HTML/PNG import and PPTX/HTML export.
 
-The engine is eight files. At build time, `scripts/build-bundle.mjs` strips the TypeScript types, combines the engine into one `window.SlideEngine` IIFE, and inlines it into the shell.
+The engine is seven files. At build time, `scripts/build-bundle.mjs` strips the TypeScript types, combines the engine into one `window.SlideEngine` IIFE, and inlines it into the shell.
 
 The result is:
 
@@ -98,7 +98,7 @@ Slides Converter is a converter, not an editor.
 
 There is deliberately no on-page drag, resize, or inline editing. The browser converts the source; PowerPoint is where the resulting slide is edited and presented.
 
-Open work and deferred features are tracked in [`BACKLOG.md`](BACKLOG.md), including:
+Open work and deferred features are tracked in the `slideseditor` GitHub Project (see `CLAUDE.md`), including:
 
 * SVG input
 * HSL colors
@@ -115,7 +115,6 @@ slideeditor.html          The deliverable — open this in a browser
 src/shell.html            Converter UI source
 engine/                   Pure-TypeScript conversion engine
 scripts/build-bundle.mjs  Zero-dependency bundler
-BACKLOG.md                Open work and deferred features
 ARCHITECTURE.md           How the pieces fit
 ```
 

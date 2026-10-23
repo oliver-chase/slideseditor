@@ -22,7 +22,6 @@ const ENGINE_DIR = join(REPO, 'engine')
 // `const` bindings do not hoist, so import-validation precedes import-file-bundle.
 const ENGINE_FILES = [
   'types.ts',
-  'persistence-types.ts',
   'document.ts',
   'import-validation.ts',
   'html-import.ts',

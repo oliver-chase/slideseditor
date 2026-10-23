@@ -1,11 +1,9 @@
-import type { SlideRecord } from './persistence-types'
 import type {
   SlideCanvas,
   SlideComponent,
   SlideDeck,
   Slide,
   SlideDocument,
-  SlideImportResult,
   SlideLayoutConstraint,
   SlideTheme,
 } from './types'
@@ -31,14 +29,6 @@ function cloneTheme(theme: SlideTheme | undefined): SlideTheme | undefined {
 
 function cloneCanvas(canvas: SlideCanvas): SlideCanvas {
   return { ...canvas }
-}
-
-function cloneSlide(slide: Slide): Slide {
-  return {
-    ...slide,
-    elements: Array.isArray(slide.elements) ? slide.elements.map(cloneComponent) : [],
-    ...(slide.background?.fill ? { background: { fill: slide.background.fill } } : {}),
-  }
 }
 
 function buildSlideFromCanvas(input: {
@@ -231,14 +221,6 @@ export function applyLayoutConstraintToComponents(input: {
   })
 }
 
-export function adaptComponentsToResponsiveCanvas(input: {
-  previousCanvas: SlideCanvas
-  nextCanvas: SlideCanvas
-  components: SlideComponent[]
-}): SlideComponent[] {
-  return adaptComponentsToResponsiveCanvasWithWarnings(input).components
-}
-
 export function adaptComponentsToResponsiveCanvasWithWarnings(input: {
   previousCanvas: SlideCanvas
   nextCanvas: SlideCanvas
@@ -307,15 +289,6 @@ export function adaptComponentsToResponsiveCanvasWithWarnings(input: {
   return { components, warnings: Array.from(new Set(warnings)) }
 }
 
-export function getSlideDocumentActiveSlide(document: SlideDocument, slideId?: string | null): Slide | null {
-  if (!Array.isArray(document.deck.slides) || document.deck.slides.length === 0) return null
-  if (slideId) {
-    const matched = document.deck.slides.find((slide) => slide.id === slideId)
-    if (matched) return matched
-  }
-  return document.deck.slides[0] || null
-}
-
 function createSlideDeck(input: {
   id?: string
   canvas: SlideCanvas
@@ -347,186 +320,3 @@ export function createSlideDocument(input: {
   }
 }
 
-export function slideDocumentToImportResult(document: SlideDocument, slideId?: string | null): SlideImportResult {
-  const slide = getSlideDocumentActiveSlide(document, slideId)
-  return {
-    document,
-    canvas: {
-      width: document.deck.width,
-      height: document.deck.height,
-      ...(slide?.background?.fill ? { background: slide.background.fill } : {}),
-    },
-    components: Array.isArray(slide?.elements) ? slide.elements.map(cloneComponent) : [],
-    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
-  }
-}
-
-export function ensureSlideDocument(input: {
-  document?: SlideDocument | null
-  canvas: SlideCanvas
-  components: SlideComponent[]
-  warnings?: string[]
-  slideId?: string
-  theme?: SlideTheme
-}): SlideDocument {
-  if (input.document) return input.document
-  return createSlideDocument({
-    id: input.slideId,
-    canvas: input.canvas,
-    components: input.components,
-    warnings: input.warnings,
-    theme: input.theme,
-  })
-}
-
-export function syncSlideDocument(input: {
-  document?: SlideDocument | null
-  canvas: SlideCanvas
-  components: SlideComponent[]
-  warnings?: string[]
-  slideId?: string
-  theme?: SlideTheme
-}): SlideDocument {
-  const version = Number.isFinite(input.document?.version) ? Number(input.document?.version) : 1
-  const activeSlideId = input.slideId || input.document?.deck.slides[0]?.id || 'slide-1'
-  const nextComponents =
-    input.document && (input.document.deck.width !== input.canvas.width || input.document.deck.height !== input.canvas.height)
-      ? input.components.map((component) => reflowPinnedComponent(component, input.canvas))
-      : input.components
-  const currentSlides = Array.isArray(input.document?.deck.slides)
-    ? input.document?.deck.slides.map(cloneSlide)
-    : []
-  const nextSlide = buildSlideFromCanvas({
-    id: activeSlideId,
-    canvas: input.canvas,
-    components: nextComponents,
-  })
-  let replaced = false
-  const nextSlides = currentSlides.map((slide) => {
-    if (slide.id !== activeSlideId) return slide
-    replaced = true
-    return nextSlide
-  })
-  if (!replaced) nextSlides.push(nextSlide)
-  return {
-    version,
-    deck: {
-      id: input.document?.deck.id || activeSlideId || 'deck-1',
-      width: input.canvas.width,
-      height: input.canvas.height,
-      slides: nextSlides,
-    },
-    warnings: Array.isArray(input.warnings) ? [...input.warnings] : [],
-    ...(input.theme || input.document?.theme ? { theme: cloneTheme(input.theme || input.document?.theme) } : {}),
-  }
-}
-
-export function appendSlideToDocument(input: {
-  document: SlideDocument
-  slideId: string
-  canvas: SlideCanvas
-  components: SlideComponent[]
-}): SlideDocument {
-  return {
-    version: input.document.version,
-    deck: {
-      ...input.document.deck,
-      slides: [
-        ...input.document.deck.slides.map(cloneSlide),
-        buildSlideFromCanvas({
-          id: input.slideId,
-          canvas: input.canvas,
-          components: input.components,
-        }),
-      ],
-    },
-    warnings: Array.isArray(input.document.warnings) ? [...input.document.warnings] : [],
-    ...(input.document.theme ? { theme: cloneTheme(input.document.theme) } : {}),
-  }
-}
-
-export function duplicateSlideInDocument(document: SlideDocument, sourceSlideId: string, nextSlideId: string): SlideDocument {
-  const slides = document.deck.slides.map(cloneSlide)
-  const sourceIndex = slides.findIndex((slide) => slide.id === sourceSlideId)
-  if (sourceIndex < 0) return document
-  const sourceSlide = slides[sourceIndex]
-  const duplicate: Slide = {
-    ...sourceSlide,
-    id: nextSlideId,
-    elements: sourceSlide.elements.map((component, index) => ({
-      ...cloneComponent(component),
-      id: `${component.id}-copy-${index + 1}`,
-    })),
-  }
-  slides.splice(sourceIndex + 1, 0, duplicate)
-  return {
-    version: document.version,
-    deck: {
-      ...document.deck,
-      slides,
-    },
-    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
-    ...(document.theme ? { theme: cloneTheme(document.theme) } : {}),
-  }
-}
-
-export function deleteSlideFromDocument(document: SlideDocument, slideId: string): SlideDocument {
-  const nextSlides = document.deck.slides.filter((slide) => slide.id !== slideId).map(cloneSlide)
-  return {
-    version: document.version,
-    deck: {
-      ...document.deck,
-      slides: nextSlides.length > 0 ? nextSlides : [buildSlideFromCanvas({
-        id: 'slide-1',
-        canvas: {
-          width: document.deck.width,
-          height: document.deck.height,
-        },
-        components: [],
-      })],
-    },
-    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
-    ...(document.theme ? { theme: cloneTheme(document.theme) } : {}),
-  }
-}
-
-export function reorderSlideInDocument(document: SlideDocument, slideId: string, direction: 'up' | 'down'): SlideDocument {
-  const slides = document.deck.slides.map(cloneSlide)
-  const index = slides.findIndex((slide) => slide.id === slideId)
-  if (index < 0) return document
-  const targetIndex = direction === 'up' ? index - 1 : index + 1
-  if (targetIndex < 0 || targetIndex >= slides.length) return document
-  const [moved] = slides.splice(index, 1)
-  slides.splice(targetIndex, 0, moved)
-  return {
-    version: document.version,
-    deck: {
-      ...document.deck,
-      slides,
-    },
-    warnings: Array.isArray(document.warnings) ? [...document.warnings] : [],
-    ...(document.theme ? { theme: cloneTheme(document.theme) } : {}),
-  }
-}
-
-export function readSlideDocumentFromMetadata(metadata: Record<string, unknown> | null | undefined): SlideDocument | null {
-  const raw = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>).slide_document : null
-  if (!raw || typeof raw !== 'object') return null
-  const candidate = raw as SlideDocument
-  if (!candidate.deck || !Array.isArray(candidate.deck.slides)) return null
-  return candidate
-}
-
-export function slideRecordToImportResult(slide: SlideRecord): SlideImportResult {
-  const persisted = readSlideDocumentFromMetadata(slide.metadata)
-  const document = persisted || createSlideDocument({
-    id: slide.id,
-    canvas: slide.canvas,
-    components: slide.components,
-    warnings: Array.isArray(slide.metadata?.warnings) ? slide.metadata.warnings as string[] : [],
-  })
-  const activeDocumentSlideId = typeof slide.metadata?.active_document_slide_id === 'string'
-    ? slide.metadata.active_document_slide_id
-    : null
-  return slideDocumentToImportResult(document, activeDocumentSlideId)
-}

@@ -17,8 +17,7 @@ slideseditor/
 │   └── shell.html           Converter UI: preview, layer panel, presets, import/export
 ├── engine/                  Pure-TypeScript conversion engine
 │   ├── types.ts             Shared component/canvas/document types
-│   ├── persistence-types.ts Slide record shapes
-│   ├── document.ts          createSlideDocument + document helpers
+│   ├── document.ts          createSlideDocument + layout/reflow helpers
 │   ├── import-validation.ts Input guards, file-size limits, error classification
 │   ├── html-import.ts       HTML -> positioned components (measure + decompose)
 │   ├── html-export.ts       Components -> standalone HTML
@@ -26,7 +25,6 @@ slideseditor/
 │   └── import-file-bundle.ts File/stylesheet selection and inlining
 ├── scripts/
 │   └── build-bundle.mjs      Zero-dep bundler (strip types, flatten, inline)
-├── BACKLOG.md                Open work and deferred features
 ├── README.md
 └── ARCHITECTURE.md
 ```
@@ -35,7 +33,7 @@ slideseditor/
 
 `scripts/build-bundle.mjs`:
 
-1. Reads the eight `engine/*.ts` files in dependency order.
+1. Reads the seven `engine/*.ts` files in dependency order.
 2. Strips TypeScript types with node's built-in `stripTypeScriptTypes` (node >= 22.13) and drops every ES `import`/`export` line — all cross-module dependencies resolve in one flat scope.
 3. Concatenates them into a single IIFE that exposes the public API on `window.SlideEngine`.
 4. Injects that bundle into `src/shell.html` at the `/* __SLIDE_ENGINE_BUNDLE__ */` marker (escaping any literal `</script>` in engine strings) and writes `slideeditor.html`.

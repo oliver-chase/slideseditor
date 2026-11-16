@@ -16,3 +16,7 @@ changing `engine/*.ts` or `src/shell.html`. The only real pre-commit validation 
 repo's own `.githooks/pre-commit`. It runs nine gates: secrets, icons/emojis, PII,
 deleted-repo references, workflow push auth, planning-doc governance, backlog hygiene,
 archived content, and writing clarity. A repo setting named `core.hooksPath` installs it.
+
+## Validation
+
+Before committing, run `bash scripts/validate.sh`.

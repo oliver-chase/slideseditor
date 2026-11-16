@@ -12,6 +12,7 @@
         "Backlog": "ea166cc6",
         "Ready": "03fa4e71",
         "In Progress": "a7dec83f",
+        "QA": "7b914d52",
         "Complete": "32ee035a"
       }
     },
@@ -38,6 +39,12 @@
       "options": {
         "Epic": "249ac7b4",
         "Story": "ebc16d7f"
+      }
+    },
+    "area": {
+      "id": "PVTSSF_lAHOCyeGV84BoaIAzhpyMZk",
+      "options": {
+        "General": "7b9b1e3c"
       }
     }
   }

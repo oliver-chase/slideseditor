@@ -877,6 +877,69 @@ async function parseCssImportUrls(
   }
 }
 
+function documentBaseUrl(doc          )         {
+  return doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href
+}
+
+function plural(count        , noun        )         {
+  return count + ' ' + noun + (count === 1 ? '' : 's')
+}
+
+// A <style> block: resolve its @import rules and keep the text.
+async function inlineStyleBlock(
+  node         ,
+  index        ,
+  doc          ,
+  warnings          ,
+)                                                                   {
+  const { cssText: inlinedText, importedCount, unresolvedCount } = await parseCssImportUrls(
+    node.textContent || '',
+    documentBaseUrl(doc),
+    warnings,
+  )
+  const chunk                           = inlinedText.trim() ? { cssText: inlinedText, source: 'inline', order: index } : null
+  if (importedCount > 0) {
+    warnings.push('Inlined ' + plural(importedCount, '@import stylesheet') + ' from inline style.')
+  }
+  if (unresolvedCount > 0) {
+    warnings.push(
+      'Could not inline ' + plural(unresolvedCount, 'inline @import stylesheet') + '; source fallback may differ from original.',
+    )
+  }
+  return { chunk, unresolved: unresolvedCount }
+}
+
+// A fetched <link> stylesheet: resolve its nested @import rules against the link's own URL.
+async function inlineLinkedStylesheet(
+  node         ,
+  index        ,
+  fetchedText        ,
+  doc          ,
+  warnings          ,
+)                                                            {
+  const linkedBase = node.getAttribute('href')
+    ? makeSafeResolvedUrl(node.getAttribute('href') || '', documentBaseUrl(doc))
+    || doc.baseURI
+    || window.location.href
+    : doc.baseURI || window.location.href
+  const { cssText: inlinedText, importedCount, unresolvedCount } = await parseCssImportUrls(fetchedText, linkedBase, warnings)
+  if (importedCount > 0) {
+    warnings.push('Inlined ' + plural(importedCount, 'nested @import stylesheet') + ' from linked stylesheet.')
+  }
+  const chunk                    = {
+    cssText: inlinedText,
+    source: 'external',
+    order: index,
+    linkHref: node.getAttribute('href') || undefined,
+  }
+  if (unresolvedCount > 0) {
+    warnings.push(
+      'Could not inline ' + plural(unresolvedCount, 'nested @import stylesheet') + '; nested fallback may differ from source.',
+    )
+  }
+  return { chunk, unresolved: unresolvedCount }
+}
+
 async function inlineExternalStylesheets(doc          , warnings          )                               {
   const styleNodes = Array.from(
     doc.querySelectorAll('style,link[rel~="stylesheet"][href]'),
@@ -884,14 +947,10 @@ async function inlineExternalStylesheets(doc          , warnings          )     
   if (styleNodes.length === 0) return []
 
   warnings.push(
-    'Detected ' +
-    styleNodes.length +
-    ' style definition block' +
-    (styleNodes.length === 1 ? '' : 's') +
-    '; attempting to inline stylesheet resources for fidelity.',
+    'Detected ' + plural(styleNodes.length, 'style definition block') + '; attempting to inline stylesheet resources for fidelity.',
   )
 
-  const baseUrl = doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href
+  const baseUrl = documentBaseUrl(doc)
   const stylesheetNodes = styleNodes.filter(
     (styleNode)                               => styleNode.tagName.toLowerCase() === 'link',
   )
@@ -909,79 +968,18 @@ async function inlineExternalStylesheets(doc          , warnings          )     
   for (let index = 0; index < styleNodes.length; index += 1) {
     const node = styleNodes[index]
     if (node.tagName.toLowerCase() === 'style') {
-      const cssText = node.textContent || ''
-      const { cssText: inlinedText, importedCount, unresolvedCount: inlinedUnresolved } = await parseCssImportUrls(
-        cssText,
-        doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href,
-        warnings,
-      )
-      if (inlinedText.trim()) {
-        inlinedStyles.push({
-          cssText: inlinedText,
-          source: 'inline',
-          order: index,
-        })
-      }
-      if (importedCount > 0) {
-        warnings.push(
-          'Inlined ' +
-            importedCount +
-            ' @import stylesheet' +
-            (importedCount === 1 ? '' : 's') +
-            ' from inline style.',
-        )
-      }
-      if (inlinedUnresolved > 0) {
-        warnings.push(
-          'Could not inline ' +
-            inlinedUnresolved +
-            ' inline @import stylesheet' +
-            (inlinedUnresolved === 1 ? '' : 's') +
-            '; source fallback may differ from original.',
-        )
-        unresolvedCount += inlinedUnresolved
-      }
+      const block = await inlineStyleBlock(node, index, doc, warnings)
+      if (block.chunk) inlinedStyles.push(block.chunk)
+      unresolvedCount += block.unresolved
       continue
     }
 
     const result = fetched[linkResultCursor]
     linkResultCursor += 1
     if (result?.status === 'fulfilled' && result.value) {
-      const linkedBase = node.getAttribute('href')
-        ? makeSafeResolvedUrl(node.getAttribute('href') || '', doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href)
-        || doc.baseURI
-        || window.location.href
-        : doc.baseURI || window.location.href
-      const { cssText: inlinedText, importedCount, unresolvedCount: inlinedUnresolved } = await parseCssImportUrls(
-        result.value,
-        linkedBase,
-        warnings,
-      )
-      if (importedCount > 0) {
-        warnings.push(
-          'Inlined ' +
-            importedCount +
-            ' nested @import stylesheet' +
-            (importedCount === 1 ? '' : 's') +
-            ' from linked stylesheet.',
-        )
-      }
-      inlinedStyles.push({
-        cssText: inlinedText,
-        source: 'external',
-        order: index,
-        linkHref: node.getAttribute('href') || undefined,
-      })
-      if (inlinedUnresolved > 0) {
-        warnings.push(
-          'Could not inline ' +
-            inlinedUnresolved +
-            ' nested @import stylesheet' +
-            (inlinedUnresolved === 1 ? '' : 's') +
-            '; nested fallback may differ from source.',
-        )
-        unresolvedCount += inlinedUnresolved
-      }
+      const linked = await inlineLinkedStylesheet(node, index, result.value, doc, warnings)
+      inlinedStyles.push(linked.chunk)
+      unresolvedCount += linked.unresolved
       continue
     }
 
@@ -990,11 +988,7 @@ async function inlineExternalStylesheets(doc          , warnings          )     
 
   if (unresolvedCount > 0) {
     warnings.push(
-      'Could not inline ' +
-      unresolvedCount +
-      ' linked stylesheet' +
-      (unresolvedCount === 1 ? '' : 's') +
-      '; remaining fallback styles may differ from source.',
+      'Could not inline ' + plural(unresolvedCount, 'linked stylesheet') + '; remaining fallback styles may differ from source.',
     )
   }
 
@@ -1893,15 +1887,12 @@ function clampAutoImportCanvasAxis(axisValue        , label                    ,
   return maxAxis
 }
 
-async function buildRenderSnapshot(doc          , root             , styleChunks                     )                          {
-  if (typeof document === 'undefined' || !document.body) {
-    return {
-      root: null,
-      nodesById: new Map(),
-      dispose: () => {},
-    }
-  }
+function emptyRenderSnapshot()                 {
+  return { root: null, nodesById: new Map(), dispose: () => {} }
+}
 
+// An invisible, script-less iframe that lays the slide out at 1920x1080 for measuring.
+function createHiddenRenderFrame()                    {
   const iframe = document.createElement('iframe')
   iframe.setAttribute('aria-hidden', 'true')
   iframe.tabIndex = -1
@@ -1916,44 +1907,11 @@ async function buildRenderSnapshot(doc          , root             , styleChunks
   iframe.style.overflow = 'hidden'
   iframe.setAttribute('sandbox', 'allow-same-origin')
   document.body.appendChild(iframe)
+  return iframe
+}
 
-  const sandboxDoc = iframe.contentDocument
-  if (!sandboxDoc) {
-    iframe.remove()
-    return {
-      root: null,
-      nodesById: new Map(),
-      dispose: () => {},
-    }
-  }
-
-  sandboxDoc.open()
-  sandboxDoc.write('<!doctype html><html><head></head><body></body></html>')
-  sandboxDoc.close()
-
-  const sandboxBody = sandboxDoc.body
-  if (!sandboxBody) {
-    iframe.remove()
-    return {
-      root: null,
-      nodesById: new Map(),
-      dispose: () => {},
-    }
-  }
-
-  sandboxBody.style.margin = '0'
-  sandboxBody.style.padding = '0'
-  sandboxBody.style.overflow = 'hidden'
-
-  if (styleChunks.length > 0 && sandboxDoc.head) {
-    const styleEl = sandboxDoc.createElement('style')
-    styleEl.textContent = styleChunks
-      .map(({ cssText }) => cssText)
-      .filter(Boolean)
-      .join('\n')
-    sandboxDoc.head.appendChild(styleEl)
-  }
-
+// Copy the parsed slide into the sandbox body and return the clone of its root.
+function cloneSlideIntoSandbox(sandboxBody             , doc          , root             )              {
   let rootClone                     = null
   const sourceBody = doc.body
   if (sourceBody) {
@@ -1976,19 +1934,58 @@ async function buildRenderSnapshot(doc          , root             , styleChunks
     rootClone = root.cloneNode(true)               
     sandboxBody.replaceChildren(rootClone)
   }
+  return rootClone
+}
 
-  await settleRenderSnapshot(sandboxDoc)
-
+function indexNodesById(sandboxDoc          )                           {
   const nodesById = new Map                     ()
   for (const node of Array.from(sandboxDoc.querySelectorAll             ('[data-import-node-id]'))) {
     const id = node.getAttribute('data-import-node-id')
     if (!id) continue
     nodesById.set(id, node)
   }
+  return nodesById
+}
+
+async function buildRenderSnapshot(doc          , root             , styleChunks                     )                          {
+  if (typeof document === 'undefined' || !document.body) return emptyRenderSnapshot()
+
+  const iframe = createHiddenRenderFrame()
+  const sandboxDoc = iframe.contentDocument
+  if (!sandboxDoc) {
+    iframe.remove()
+    return emptyRenderSnapshot()
+  }
+
+  sandboxDoc.open()
+  sandboxDoc.write('<!doctype html><html><head></head><body></body></html>')
+  sandboxDoc.close()
+
+  const sandboxBody = sandboxDoc.body
+  if (!sandboxBody) {
+    iframe.remove()
+    return emptyRenderSnapshot()
+  }
+
+  sandboxBody.style.margin = '0'
+  sandboxBody.style.padding = '0'
+  sandboxBody.style.overflow = 'hidden'
+
+  if (styleChunks.length > 0 && sandboxDoc.head) {
+    const styleEl = sandboxDoc.createElement('style')
+    styleEl.textContent = styleChunks
+      .map(({ cssText }) => cssText)
+      .filter(Boolean)
+      .join('\n')
+    sandboxDoc.head.appendChild(styleEl)
+  }
+
+  const rootClone = cloneSlideIntoSandbox(sandboxBody, doc, root)
+  await settleRenderSnapshot(sandboxDoc)
 
   return {
     root: rootClone,
-    nodesById,
+    nodesById: indexNodesById(sandboxDoc),
     dispose: () => {
       iframe.remove()
     },
@@ -2332,21 +2329,18 @@ async function rasterizeArtLayer(
   return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)
 }
 
-async function buildRasterizedSlide(
-  renderSnapshot                ,
-  root             ,
-  canvasWidth        ,
-  canvasHeight        ,
-  warnings          ,
-)                                   {
-  const renderRoot = renderSnapshot.root
-  const win = renderRoot?.ownerDocument?.defaultView
-  if (!renderRoot || !win || typeof document === 'undefined') return null
+                            
+                       
+                                
+                               
+ 
 
+// Rasterize only genuinely rich designed graphics: gradient fills, gradient text, or two or
+// more decorative boxes. Returns null for a simple text-on-solid slide, which keeps native shapes.
+function findRasterCandidates(renderRoot             , win        )                          {
   // Ignore hidden elements everywhere (mirrors the native path's visibility filtering)
   // so hidden source text/decoration never leaks into the output.
   const allEls = Array.from(renderRoot.querySelectorAll             ('*')).filter((el) => isVisibleEl(el, win))
-  // Only take the rasterization path for genuinely rich designed graphics.
   const gradientTextEls = allEls
     .filter((el) => isGradientTextElement(el, win))
     .filter((el, _i, arr) => !arr.some((other) => other !== el && other.contains(el)))
@@ -2363,30 +2357,30 @@ async function buildRasterizedSlide(
     return isMeaningfulBackground(cs) || hasRenderedBorder(cs) || /gradient/i.test(cs.backgroundImage || '') ||
       (shadow && shadow !== 'none') || /drop-shadow/i.test(filter)
   })
-  if (!hasGradientFill && gradientTextEls.length === 0 && visualBoxes.length < 2) {
-    return null
-  }
+  if (!hasGradientFill && gradientTextEls.length === 0 && visualBoxes.length < 2) return null
+  return { allEls, gradientTextEls, gradientSet }
+}
 
-  const artUri = await rasterizeArtLayer(renderRoot, win, canvasWidth, canvasHeight, 2)
-  if (!artUri) return null // never emit a partial/broken result; fall back to native
-
-  // Text of an element excluding any gradient-text descendant (those become their own
-  // image). Inline emphasis (<strong>/<em>/<span>) stays part of the run.
-  const plainTextOf = (el             )         => {
-    let text = ''
-    const walker = (el.ownerDocument || document).createTreeWalker(el, NodeFilter.SHOW_TEXT)
-    while (walker.nextNode()) {
-      let p = walker.currentNode.parentElement
-      let skip = false
-      while (p && p !== el) { if (gradientSet.has(p)) { skip = true; break } p = p.parentElement }
-      if (!skip) text += walker.currentNode.textContent
-    }
-    return text.replace(/\s+/g, ' ').trim()
+// Text of an element excluding any gradient-text descendant (those become their own
+// image). Inline emphasis (<strong>/<em>/<span>) stays part of the run.
+function plainTextOf(el             , gradientSet                  )         {
+  let text = ''
+  const walker = (el.ownerDocument || document).createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) {
+    let p = walker.currentNode.parentElement
+    let skip = false
+    while (p && p !== el) { if (gradientSet.has(p)) { skip = true; break } p = p.parentElement }
+    if (!skip) text += walker.currentNode.textContent
   }
-  // A plain-text run is the OUTERMOST non-gradient element that carries text: it must
-  // have its own text, not be (or sit inside) a gradient-text element, and have no
-  // ancestor that also carries its own text — otherwise a child with text (e.g. a
-  // <strong> inside a heading) would emit a second overlapping box with duplicate words.
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+// A plain-text run is the OUTERMOST non-gradient element that carries text: it must
+// have its own text, not be (or sit inside) a gradient-text element, and have no
+// ancestor that also carries its own text, otherwise a child with text (e.g. a
+// <strong> inside a heading) would emit a second overlapping box with duplicate words.
+function selectPlainTextEls(renderRoot             , candidates                  )                {
+  const { allEls, gradientTextEls, gradientSet } = candidates
   const hasTextBearingAncestor = (el             )          => {
     let p = el.parentElement
     while (p && p !== renderRoot) {
@@ -2395,30 +2389,68 @@ async function buildRasterizedSlide(
     }
     return false
   }
-  const plainEls = allEls.filter(
+  return allEls.filter(
     (el) => hasOwnTextNode(el) && !gradientSet.has(el) &&
       !gradientTextEls.some((g) => g !== el && g.contains(el)) && !hasTextBearingAncestor(el),
   )
+}
 
+function measuredBox(el             , measureRoot             ) {
+  const measured = measureNodeRect(el, measureRoot)
+  return {
+    x: asCanonicalDimension(measured.x ?? 0),
+    y: asCanonicalDimension(measured.y ?? 0),
+    width: asCanonicalDimension(measured.width ?? 0),
+    height: asCanonicalDimensionOptional(measured.height ?? 0),
+  }
+}
+
+function buildTextBoxComponent(
+  el             ,
+  id        ,
+  gradientSet                  ,
+  measureRoot             ,
+  warnings          ,
+)                        {
+  const text = plainTextOf(el, gradientSet)
+  if (!text) return null
+  return {
+    id,
+    type: 'text',
+    sourceLabel: getNodeLabel(el),
+    ...measuredBox(el, measureRoot),
+    content: escapeHtmlText(text),
+    style: extractStyle(parseInlineStyle(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
+    locked: false,
+    visible: true,
+  }
+}
+
+async function buildRasterizedSlide(
+  renderSnapshot                ,
+  root             ,
+  canvasWidth        ,
+  canvasHeight        ,
+  warnings          ,
+)                                   {
+  const renderRoot = renderSnapshot.root
+  const win = renderRoot?.ownerDocument?.defaultView
+  if (!renderRoot || !win || typeof document === 'undefined') return null
+
+  const candidates = findRasterCandidates(renderRoot, win)
+  if (!candidates) return null
+  const { gradientTextEls, gradientSet } = candidates
+
+  const artUri = await rasterizeArtLayer(renderRoot, win, canvasWidth, canvasHeight, 2)
+  if (!artUri) return null // never emit a partial/broken result; fall back to native
+
+  const plainEls = selectPlainTextEls(renderRoot, candidates)
   const components                   = []
-  const renderRootForMeasure = renderSnapshot.root || root
-  const emitTextBox = (el             , idPrefix        , seq        ) => {
-    const text = plainTextOf(el)
-    if (!text) return false
-    const measured = measureNodeRect(el, renderRootForMeasure)
-    components.push({
-      id: idPrefix + seq,
-      type: 'text',
-      sourceLabel: getNodeLabel(el),
-      x: asCanonicalDimension(measured.x ?? 0),
-      y: asCanonicalDimension(measured.y ?? 0),
-      width: asCanonicalDimension(measured.width ?? 0),
-      height: asCanonicalDimensionOptional(measured.height ?? 0),
-      content: escapeHtmlText(text),
-      style: extractStyle(parseInlineStyle(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
-      locked: false,
-      visible: true,
-    })
+  const measureRoot = renderSnapshot.root || root
+  const emitTextBox = (el             , idPrefix        , seq        )          => {
+    const box = buildTextBoxComponent(el, idPrefix + seq, gradientSet, measureRoot, warnings)
+    if (!box) return false
+    components.push(box)
     return true
   }
   components.push({
@@ -2445,16 +2477,12 @@ async function buildRasterizedSlide(
       if (emitTextBox(g, 'raster-gradtext-', gradTextSeq + 1)) gradTextSeq += 1
       continue
     }
-    const measured = measureNodeRect(g, renderRootForMeasure)
     gradSeq += 1
     components.push({
       id: 'raster-grad-' + gradSeq,
       type: 'logo',
       sourceLabel: (getNodeLabel(g) || 'gradient text'),
-      x: asCanonicalDimension(measured.x ?? 0),
-      y: asCanonicalDimension(measured.y ?? 0),
-      width: asCanonicalDimension(measured.width ?? 0),
-      height: asCanonicalDimensionOptional(measured.height ?? 0),
+      ...measuredBox(g, measureRoot),
       content: '<img src="' + uri + '" />',
       style: {},
       locked: false,
@@ -3734,6 +3762,62 @@ function buildShapeXml(
                  
  
 
+function buildBackgroundShapeXml(background                    , slideEmu          , shapeId        )                {
+  const canvasGradient = parseLinearGradient(background)
+  const canvasColor = parseCssColor(background)
+  if (!canvasGradient && !canvasColor) return null
+  const fillXml = canvasGradient
+    ? buildGradientFillXml(canvasGradient)
+    : buildSolidFillXml(canvasColor               )
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="slide-background"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${slideEmu.w}" cy="${slideEmu.h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${fillXml}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`
+}
+
+// The picture, plus a caption text shape on top when the component also carries text.
+function buildPictureShapes(
+  component                ,
+  rId        ,
+  shapeId        ,
+  scaleX        ,
+  scaleY        ,
+  slideRef        ,
+  warnings          ,
+  fontScale        ,
+)           {
+  const x = toEmuOffset(component.x, scaleX)
+  const y = toEmuOffset(component.y, scaleY)
+  const w = toEmu(component.width, scaleX)
+  const imageHeight = typeof component.height === 'number' && component.height > 0 ? component.height : component.width
+  const h = toEmu(imageHeight, scaleY)
+  const shapes = [buildPicXml(component, shapeId, rId, x, y, w, h)]
+
+  // A component may carry both an image and a caption. Emit the caption as a
+  // transparent text shape on top so the picture stays visible beneath it:
+  // retype to 'text' and clear the fill so buildShapeXml produces noFill
+  // (card/panel/row/stat would otherwise paint an opaque default fill).
+  const captionContent = stripImageMarkup(component.content || '')
+  if (toPlainText(captionContent)) {
+    const captionShape = buildShapeXml(
+      { ...component, type: 'text', content: captionContent, style: { ...component.style, backgroundFill: undefined, backgroundColor: undefined } },
+      shapeId + 1,
+      scaleX,
+      scaleY,
+      slideRef,
+      warnings,
+      fontScale,
+    )
+    if (captionShape) shapes.push(captionShape)
+  }
+  return shapes
+}
+
+function buildFallbackNoteXml()         {
+  return `<p:sp><p:nvSpPr><p:cNvPr id="2" name="fallback-note"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="457200" y="457200"/><a:ext cx="8229600" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"><a:solidFill><a:srgbClr val="666666"/></a:solidFill><a:latin typeface="Arial"/></a:rPr><a:t>${escXml('This slide had no exportable native components.')}</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`
+}
+
+function buildSlideTreeXml(shapes          )         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sld xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes.join('')}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`
+}
+
 function buildSlideXml(
   slide                      ,
   slideIndex        ,
@@ -3763,14 +3847,9 @@ function buildSlideXml(
     return rId
   }
 
-  const canvasGradient = parseLinearGradient(slide.canvas.background)
-  const canvasColor = parseCssColor(slide.canvas.background)
-  if (canvasGradient || canvasColor) {
-    const fillXml = canvasGradient
-      ? buildGradientFillXml(canvasGradient)
-      : buildSolidFillXml(canvasColor               )
-    const bg = `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="slide-background"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${slideEmu.w}" cy="${slideEmu.h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${fillXml}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`
-    shapes.push(bg)
+  const background = buildBackgroundShapeXml(slide.canvas.background, slideEmu, shapeId)
+  if (background) {
+    shapes.push(background)
     shapeId += 1
   }
 
@@ -3786,34 +3865,9 @@ function buildSlideXml(
       const decoded = decodeDataUriImage(imageUri, warnings, componentRef)
       if (decoded) {
         const rId = registerImage(decoded)
-        const x = toEmuOffset(component.x, scaleX)
-        const y = toEmuOffset(component.y, scaleY)
-        const w = toEmu(component.width, scaleX)
-        const imageHeight = typeof component.height === 'number' && component.height > 0 ? component.height : component.width
-        const h = toEmu(imageHeight, scaleY)
-        shapes.push(buildPicXml(component, shapeId, rId, x, y, w, h))
-        shapeId += 1
-
-        // A component may carry both an image and a caption. Emit the caption as a
-        // transparent text shape on top so the picture stays visible beneath it:
-        // retype to 'text' and clear the fill so buildShapeXml produces noFill
-        // (card/panel/row/stat would otherwise paint an opaque default fill).
-        const captionContent = stripImageMarkup(component.content || '')
-        if (toPlainText(captionContent)) {
-          const captionShape = buildShapeXml(
-            { ...component, type: 'text', content: captionContent, style: { ...component.style, backgroundFill: undefined, backgroundColor: undefined } },
-            shapeId,
-            scaleX,
-            scaleY,
-            slideRef,
-            warnings,
-            fontScale,
-          )
-          if (captionShape) {
-            shapes.push(captionShape)
-            shapeId += 1
-          }
-        }
+        const pictureShapes = buildPictureShapes(component, rId, shapeId, scaleX, scaleY, slideRef, warnings, fontScale)
+        shapes.push(...pictureShapes)
+        shapeId += pictureShapes.length
         continue
       }
       // Decoding failed and already warned. An image-only logo has nothing else to
@@ -3832,12 +3886,11 @@ function buildSlideXml(
   }
 
   if (shapes.length === 0) {
-    const fallback = `<p:sp><p:nvSpPr><p:cNvPr id="2" name="fallback-note"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="457200" y="457200"/><a:ext cx="8229600" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"><a:solidFill><a:srgbClr val="666666"/></a:solidFill><a:latin typeface="Arial"/></a:rPr><a:t>${escXml('This slide had no exportable native components.')}</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`
-    shapes.push(fallback)
+    shapes.push(buildFallbackNoteXml())
     warnings.push(`${slideRef}: no exportable components found; added fallback note.`)
   }
 
-  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sld xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes.join('')}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`
+  const xml = buildSlideTreeXml(shapes)
   return { xml, relsXml: buildSlideRelsXml(imageRels) }
 }
 

@@ -4,7 +4,7 @@ import { inflateRawSync } from 'node:zlib'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
 
-const html = readFileSync(new URL('../slideeditor.html', import.meta.url), 'utf8')
+const html = readFileSync(process.env.SLIDE_BUNDLE || new URL('../slideeditor.html', import.meta.url), 'utf8')
 const bundle = html.split('<script>')[1].split('</script>')[0]
 const sandbox = { window: {}, console, TextEncoder, TextDecoder, Blob, URL, atob, btoa }
 sandbox.self = sandbox.window
@@ -12,9 +12,9 @@ vm.createContext(sandbox)
 vm.runInContext(bundle, sandbox)
 const E = sandbox.window.SlideEngine
 
-function slideXml(content, style = {}, x = 40, y = 40) {
+function slideXml(content, style = {}, x = 40, y = 40, background) {
   const component = { id: 't1', type: 'text', content, x, y, width: 400, height: 60, locked: false, visible: true, sourceLabel: 'test', style }
-  const document = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [component] })
+  const document = E.createSlideDocument({ canvas: { width: 1280, height: 720, ...(background ? { background } : {}) }, components: [component] })
   return E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Test', document }]).blob.arrayBuffer().then((ab) => {
     const buf = Buffer.from(ab)
     let eocd = buf.length - 22
@@ -72,5 +72,14 @@ assert.ok(svgResult.warnings.some((w) => w.includes('img1') && w.includes('image
 
 const offCanvas = await slideXml('Off canvas', {}, -80, -30)
 assert.ok(offCanvas.includes('<a:off x="-762000" y="-285750"/>'), 'a negative position is kept, not clamped to 0')
+
+// A picture that carries text keeps both: the picture, plus a caption shape on top.
+const captioned = await slideXml(`<img src="${png}" />Caption text`)
+assert.equal((captioned.match(/<p:pic>/g) || []).length, 1, 'a captioned image exports one picture')
+assert.ok(captioned.includes('Caption text'), 'the caption text is kept')
+
+// A canvas background becomes a full-slide shape behind the components.
+const withBackground = await slideXml('On a gradient', {}, 40, 40, 'linear-gradient(180deg, #112233, #445566)')
+assert.ok(withBackground.includes('name="slide-background"') && withBackground.includes('<a:gradFill'), 'a gradient background exports as a background shape')
 
 console.log('pptx-export tests passed')

@@ -322,6 +322,69 @@ async function parseCssImportUrls(
   }
 }
 
+function documentBaseUrl(doc: Document): string {
+  return doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href
+}
+
+function plural(count: number, noun: string): string {
+  return count + ' ' + noun + (count === 1 ? '' : 's')
+}
+
+// A <style> block: resolve its @import rules and keep the text.
+async function inlineStyleBlock(
+  node: Element,
+  index: number,
+  doc: Document,
+  warnings: string[],
+): Promise<{ chunk: InlinedStyleChunk | null; unresolved: number }> {
+  const { cssText: inlinedText, importedCount, unresolvedCount } = await parseCssImportUrls(
+    node.textContent || '',
+    documentBaseUrl(doc),
+    warnings,
+  )
+  const chunk: InlinedStyleChunk | null = inlinedText.trim() ? { cssText: inlinedText, source: 'inline', order: index } : null
+  if (importedCount > 0) {
+    warnings.push('Inlined ' + plural(importedCount, '@import stylesheet') + ' from inline style.')
+  }
+  if (unresolvedCount > 0) {
+    warnings.push(
+      'Could not inline ' + plural(unresolvedCount, 'inline @import stylesheet') + '; source fallback may differ from original.',
+    )
+  }
+  return { chunk, unresolved: unresolvedCount }
+}
+
+// A fetched <link> stylesheet: resolve its nested @import rules against the link's own URL.
+async function inlineLinkedStylesheet(
+  node: Element,
+  index: number,
+  fetchedText: string,
+  doc: Document,
+  warnings: string[],
+): Promise<{ chunk: InlinedStyleChunk; unresolved: number }> {
+  const linkedBase = node.getAttribute('href')
+    ? makeSafeResolvedUrl(node.getAttribute('href') || '', documentBaseUrl(doc))
+    || doc.baseURI
+    || window.location.href
+    : doc.baseURI || window.location.href
+  const { cssText: inlinedText, importedCount, unresolvedCount } = await parseCssImportUrls(fetchedText, linkedBase, warnings)
+  if (importedCount > 0) {
+    warnings.push('Inlined ' + plural(importedCount, 'nested @import stylesheet') + ' from linked stylesheet.')
+  }
+  const chunk: InlinedStyleChunk = {
+    cssText: inlinedText,
+    source: 'external',
+    order: index,
+    linkHref: node.getAttribute('href') || undefined,
+  }
+  if (unresolvedCount > 0) {
+    warnings.push(
+      'Could not inline ' + plural(unresolvedCount, 'nested @import stylesheet') + '; nested fallback may differ from source.',
+    )
+  }
+  return { chunk, unresolved: unresolvedCount }
+}
+
 async function inlineExternalStylesheets(doc: Document, warnings: string[]): Promise<InlinedStyleChunk[]> {
   const styleNodes = Array.from(
     doc.querySelectorAll('style,link[rel~="stylesheet"][href]'),
@@ -329,14 +392,10 @@ async function inlineExternalStylesheets(doc: Document, warnings: string[]): Pro
   if (styleNodes.length === 0) return []
 
   warnings.push(
-    'Detected ' +
-    styleNodes.length +
-    ' style definition block' +
-    (styleNodes.length === 1 ? '' : 's') +
-    '; attempting to inline stylesheet resources for fidelity.',
+    'Detected ' + plural(styleNodes.length, 'style definition block') + '; attempting to inline stylesheet resources for fidelity.',
   )
 
-  const baseUrl = doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href
+  const baseUrl = documentBaseUrl(doc)
   const stylesheetNodes = styleNodes.filter(
     (styleNode): styleNode is HTMLLinkElement => styleNode.tagName.toLowerCase() === 'link',
   )
@@ -354,79 +413,18 @@ async function inlineExternalStylesheets(doc: Document, warnings: string[]): Pro
   for (let index = 0; index < styleNodes.length; index += 1) {
     const node = styleNodes[index]
     if (node.tagName.toLowerCase() === 'style') {
-      const cssText = node.textContent || ''
-      const { cssText: inlinedText, importedCount, unresolvedCount: inlinedUnresolved } = await parseCssImportUrls(
-        cssText,
-        doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href,
-        warnings,
-      )
-      if (inlinedText.trim()) {
-        inlinedStyles.push({
-          cssText: inlinedText,
-          source: 'inline',
-          order: index,
-        })
-      }
-      if (importedCount > 0) {
-        warnings.push(
-          'Inlined ' +
-            importedCount +
-            ' @import stylesheet' +
-            (importedCount === 1 ? '' : 's') +
-            ' from inline style.',
-        )
-      }
-      if (inlinedUnresolved > 0) {
-        warnings.push(
-          'Could not inline ' +
-            inlinedUnresolved +
-            ' inline @import stylesheet' +
-            (inlinedUnresolved === 1 ? '' : 's') +
-            '; source fallback may differ from original.',
-        )
-        unresolvedCount += inlinedUnresolved
-      }
+      const block = await inlineStyleBlock(node, index, doc, warnings)
+      if (block.chunk) inlinedStyles.push(block.chunk)
+      unresolvedCount += block.unresolved
       continue
     }
 
     const result = fetched[linkResultCursor]
     linkResultCursor += 1
     if (result?.status === 'fulfilled' && result.value) {
-      const linkedBase = node.getAttribute('href')
-        ? makeSafeResolvedUrl(node.getAttribute('href') || '', doc.baseURI && !doc.baseURI.startsWith('about:') ? doc.baseURI : window.location.href)
-        || doc.baseURI
-        || window.location.href
-        : doc.baseURI || window.location.href
-      const { cssText: inlinedText, importedCount, unresolvedCount: inlinedUnresolved } = await parseCssImportUrls(
-        result.value,
-        linkedBase,
-        warnings,
-      )
-      if (importedCount > 0) {
-        warnings.push(
-          'Inlined ' +
-            importedCount +
-            ' nested @import stylesheet' +
-            (importedCount === 1 ? '' : 's') +
-            ' from linked stylesheet.',
-        )
-      }
-      inlinedStyles.push({
-        cssText: inlinedText,
-        source: 'external',
-        order: index,
-        linkHref: node.getAttribute('href') || undefined,
-      })
-      if (inlinedUnresolved > 0) {
-        warnings.push(
-          'Could not inline ' +
-            inlinedUnresolved +
-            ' nested @import stylesheet' +
-            (inlinedUnresolved === 1 ? '' : 's') +
-            '; nested fallback may differ from source.',
-        )
-        unresolvedCount += inlinedUnresolved
-      }
+      const linked = await inlineLinkedStylesheet(node, index, result.value, doc, warnings)
+      inlinedStyles.push(linked.chunk)
+      unresolvedCount += linked.unresolved
       continue
     }
 
@@ -435,11 +433,7 @@ async function inlineExternalStylesheets(doc: Document, warnings: string[]): Pro
 
   if (unresolvedCount > 0) {
     warnings.push(
-      'Could not inline ' +
-      unresolvedCount +
-      ' linked stylesheet' +
-      (unresolvedCount === 1 ? '' : 's') +
-      '; remaining fallback styles may differ from source.',
+      'Could not inline ' + plural(unresolvedCount, 'linked stylesheet') + '; remaining fallback styles may differ from source.',
     )
   }
 
@@ -1338,15 +1332,12 @@ function clampAutoImportCanvasAxis(axisValue: number, label: 'width' | 'height',
   return maxAxis
 }
 
-async function buildRenderSnapshot(doc: Document, root: HTMLElement, styleChunks: InlinedStyleChunk[]): Promise<RenderSnapshot> {
-  if (typeof document === 'undefined' || !document.body) {
-    return {
-      root: null,
-      nodesById: new Map(),
-      dispose: () => {},
-    }
-  }
+function emptyRenderSnapshot(): RenderSnapshot {
+  return { root: null, nodesById: new Map(), dispose: () => {} }
+}
 
+// An invisible, script-less iframe that lays the slide out at 1920x1080 for measuring.
+function createHiddenRenderFrame(): HTMLIFrameElement {
   const iframe = document.createElement('iframe')
   iframe.setAttribute('aria-hidden', 'true')
   iframe.tabIndex = -1
@@ -1361,44 +1352,11 @@ async function buildRenderSnapshot(doc: Document, root: HTMLElement, styleChunks
   iframe.style.overflow = 'hidden'
   iframe.setAttribute('sandbox', 'allow-same-origin')
   document.body.appendChild(iframe)
+  return iframe
+}
 
-  const sandboxDoc = iframe.contentDocument
-  if (!sandboxDoc) {
-    iframe.remove()
-    return {
-      root: null,
-      nodesById: new Map(),
-      dispose: () => {},
-    }
-  }
-
-  sandboxDoc.open()
-  sandboxDoc.write('<!doctype html><html><head></head><body></body></html>')
-  sandboxDoc.close()
-
-  const sandboxBody = sandboxDoc.body
-  if (!sandboxBody) {
-    iframe.remove()
-    return {
-      root: null,
-      nodesById: new Map(),
-      dispose: () => {},
-    }
-  }
-
-  sandboxBody.style.margin = '0'
-  sandboxBody.style.padding = '0'
-  sandboxBody.style.overflow = 'hidden'
-
-  if (styleChunks.length > 0 && sandboxDoc.head) {
-    const styleEl = sandboxDoc.createElement('style')
-    styleEl.textContent = styleChunks
-      .map(({ cssText }) => cssText)
-      .filter(Boolean)
-      .join('\n')
-    sandboxDoc.head.appendChild(styleEl)
-  }
-
+// Copy the parsed slide into the sandbox body and return the clone of its root.
+function cloneSlideIntoSandbox(sandboxBody: HTMLElement, doc: Document, root: HTMLElement): HTMLElement {
   let rootClone: HTMLElement | null = null
   const sourceBody = doc.body
   if (sourceBody) {
@@ -1421,19 +1379,58 @@ async function buildRenderSnapshot(doc: Document, root: HTMLElement, styleChunks
     rootClone = root.cloneNode(true) as HTMLElement
     sandboxBody.replaceChildren(rootClone)
   }
+  return rootClone
+}
 
-  await settleRenderSnapshot(sandboxDoc)
-
+function indexNodesById(sandboxDoc: Document): Map<string, HTMLElement> {
   const nodesById = new Map<string, HTMLElement>()
   for (const node of Array.from(sandboxDoc.querySelectorAll<HTMLElement>('[data-import-node-id]'))) {
     const id = node.getAttribute('data-import-node-id')
     if (!id) continue
     nodesById.set(id, node)
   }
+  return nodesById
+}
+
+async function buildRenderSnapshot(doc: Document, root: HTMLElement, styleChunks: InlinedStyleChunk[]): Promise<RenderSnapshot> {
+  if (typeof document === 'undefined' || !document.body) return emptyRenderSnapshot()
+
+  const iframe = createHiddenRenderFrame()
+  const sandboxDoc = iframe.contentDocument
+  if (!sandboxDoc) {
+    iframe.remove()
+    return emptyRenderSnapshot()
+  }
+
+  sandboxDoc.open()
+  sandboxDoc.write('<!doctype html><html><head></head><body></body></html>')
+  sandboxDoc.close()
+
+  const sandboxBody = sandboxDoc.body
+  if (!sandboxBody) {
+    iframe.remove()
+    return emptyRenderSnapshot()
+  }
+
+  sandboxBody.style.margin = '0'
+  sandboxBody.style.padding = '0'
+  sandboxBody.style.overflow = 'hidden'
+
+  if (styleChunks.length > 0 && sandboxDoc.head) {
+    const styleEl = sandboxDoc.createElement('style')
+    styleEl.textContent = styleChunks
+      .map(({ cssText }) => cssText)
+      .filter(Boolean)
+      .join('\n')
+    sandboxDoc.head.appendChild(styleEl)
+  }
+
+  const rootClone = cloneSlideIntoSandbox(sandboxBody, doc, root)
+  await settleRenderSnapshot(sandboxDoc)
 
   return {
     root: rootClone,
-    nodesById,
+    nodesById: indexNodesById(sandboxDoc),
     dispose: () => {
       iframe.remove()
     },
@@ -1777,21 +1774,18 @@ async function rasterizeArtLayer(
   return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)
 }
 
-async function buildRasterizedSlide(
-  renderSnapshot: RenderSnapshot,
-  root: HTMLElement,
-  canvasWidth: number,
-  canvasHeight: number,
-  warnings: string[],
-): Promise<SlideComponent[] | null> {
-  const renderRoot = renderSnapshot.root
-  const win = renderRoot?.ownerDocument?.defaultView
-  if (!renderRoot || !win || typeof document === 'undefined') return null
+interface RasterCandidates {
+  allEls: HTMLElement[]
+  gradientTextEls: HTMLElement[]
+  gradientSet: Set<HTMLElement>
+}
 
+// Rasterize only genuinely rich designed graphics: gradient fills, gradient text, or two or
+// more decorative boxes. Returns null for a simple text-on-solid slide, which keeps native shapes.
+function findRasterCandidates(renderRoot: HTMLElement, win: Window): RasterCandidates | null {
   // Ignore hidden elements everywhere (mirrors the native path's visibility filtering)
   // so hidden source text/decoration never leaks into the output.
   const allEls = Array.from(renderRoot.querySelectorAll<HTMLElement>('*')).filter((el) => isVisibleEl(el, win))
-  // Only take the rasterization path for genuinely rich designed graphics.
   const gradientTextEls = allEls
     .filter((el) => isGradientTextElement(el, win))
     .filter((el, _i, arr) => !arr.some((other) => other !== el && other.contains(el)))
@@ -1808,30 +1802,30 @@ async function buildRasterizedSlide(
     return isMeaningfulBackground(cs) || hasRenderedBorder(cs) || /gradient/i.test(cs.backgroundImage || '') ||
       (shadow && shadow !== 'none') || /drop-shadow/i.test(filter)
   })
-  if (!hasGradientFill && gradientTextEls.length === 0 && visualBoxes.length < 2) {
-    return null
-  }
+  if (!hasGradientFill && gradientTextEls.length === 0 && visualBoxes.length < 2) return null
+  return { allEls, gradientTextEls, gradientSet }
+}
 
-  const artUri = await rasterizeArtLayer(renderRoot, win, canvasWidth, canvasHeight, 2)
-  if (!artUri) return null // never emit a partial/broken result; fall back to native
-
-  // Text of an element excluding any gradient-text descendant (those become their own
-  // image). Inline emphasis (<strong>/<em>/<span>) stays part of the run.
-  const plainTextOf = (el: HTMLElement): string => {
-    let text = ''
-    const walker = (el.ownerDocument || document).createTreeWalker(el, NodeFilter.SHOW_TEXT)
-    while (walker.nextNode()) {
-      let p = walker.currentNode.parentElement
-      let skip = false
-      while (p && p !== el) { if (gradientSet.has(p)) { skip = true; break } p = p.parentElement }
-      if (!skip) text += walker.currentNode.textContent
-    }
-    return text.replace(/\s+/g, ' ').trim()
+// Text of an element excluding any gradient-text descendant (those become their own
+// image). Inline emphasis (<strong>/<em>/<span>) stays part of the run.
+function plainTextOf(el: HTMLElement, gradientSet: Set<HTMLElement>): string {
+  let text = ''
+  const walker = (el.ownerDocument || document).createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) {
+    let p = walker.currentNode.parentElement
+    let skip = false
+    while (p && p !== el) { if (gradientSet.has(p)) { skip = true; break } p = p.parentElement }
+    if (!skip) text += walker.currentNode.textContent
   }
-  // A plain-text run is the OUTERMOST non-gradient element that carries text: it must
-  // have its own text, not be (or sit inside) a gradient-text element, and have no
-  // ancestor that also carries its own text — otherwise a child with text (e.g. a
-  // <strong> inside a heading) would emit a second overlapping box with duplicate words.
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+// A plain-text run is the OUTERMOST non-gradient element that carries text: it must
+// have its own text, not be (or sit inside) a gradient-text element, and have no
+// ancestor that also carries its own text, otherwise a child with text (e.g. a
+// <strong> inside a heading) would emit a second overlapping box with duplicate words.
+function selectPlainTextEls(renderRoot: HTMLElement, candidates: RasterCandidates): HTMLElement[] {
+  const { allEls, gradientTextEls, gradientSet } = candidates
   const hasTextBearingAncestor = (el: HTMLElement): boolean => {
     let p = el.parentElement
     while (p && p !== renderRoot) {
@@ -1840,30 +1834,68 @@ async function buildRasterizedSlide(
     }
     return false
   }
-  const plainEls = allEls.filter(
+  return allEls.filter(
     (el) => hasOwnTextNode(el) && !gradientSet.has(el) &&
       !gradientTextEls.some((g) => g !== el && g.contains(el)) && !hasTextBearingAncestor(el),
   )
+}
 
+function measuredBox(el: HTMLElement, measureRoot: HTMLElement) {
+  const measured = measureNodeRect(el, measureRoot)
+  return {
+    x: asCanonicalDimension(measured.x ?? 0),
+    y: asCanonicalDimension(measured.y ?? 0),
+    width: asCanonicalDimension(measured.width ?? 0),
+    height: asCanonicalDimensionOptional(measured.height ?? 0),
+  }
+}
+
+function buildTextBoxComponent(
+  el: HTMLElement,
+  id: string,
+  gradientSet: Set<HTMLElement>,
+  measureRoot: HTMLElement,
+  warnings: string[],
+): SlideComponent | null {
+  const text = plainTextOf(el, gradientSet)
+  if (!text) return null
+  return {
+    id,
+    type: 'text',
+    sourceLabel: getNodeLabel(el),
+    ...measuredBox(el, measureRoot),
+    content: escapeHtmlText(text),
+    style: extractStyle(parseInlineStyle(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
+    locked: false,
+    visible: true,
+  }
+}
+
+async function buildRasterizedSlide(
+  renderSnapshot: RenderSnapshot,
+  root: HTMLElement,
+  canvasWidth: number,
+  canvasHeight: number,
+  warnings: string[],
+): Promise<SlideComponent[] | null> {
+  const renderRoot = renderSnapshot.root
+  const win = renderRoot?.ownerDocument?.defaultView
+  if (!renderRoot || !win || typeof document === 'undefined') return null
+
+  const candidates = findRasterCandidates(renderRoot, win)
+  if (!candidates) return null
+  const { gradientTextEls, gradientSet } = candidates
+
+  const artUri = await rasterizeArtLayer(renderRoot, win, canvasWidth, canvasHeight, 2)
+  if (!artUri) return null // never emit a partial/broken result; fall back to native
+
+  const plainEls = selectPlainTextEls(renderRoot, candidates)
   const components: SlideComponent[] = []
-  const renderRootForMeasure = renderSnapshot.root || root
-  const emitTextBox = (el: HTMLElement, idPrefix: string, seq: number) => {
-    const text = plainTextOf(el)
-    if (!text) return false
-    const measured = measureNodeRect(el, renderRootForMeasure)
-    components.push({
-      id: idPrefix + seq,
-      type: 'text',
-      sourceLabel: getNodeLabel(el),
-      x: asCanonicalDimension(measured.x ?? 0),
-      y: asCanonicalDimension(measured.y ?? 0),
-      width: asCanonicalDimension(measured.width ?? 0),
-      height: asCanonicalDimensionOptional(measured.height ?? 0),
-      content: escapeHtmlText(text),
-      style: extractStyle(parseInlineStyle(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
-      locked: false,
-      visible: true,
-    })
+  const measureRoot = renderSnapshot.root || root
+  const emitTextBox = (el: HTMLElement, idPrefix: string, seq: number): boolean => {
+    const box = buildTextBoxComponent(el, idPrefix + seq, gradientSet, measureRoot, warnings)
+    if (!box) return false
+    components.push(box)
     return true
   }
   components.push({
@@ -1890,16 +1922,12 @@ async function buildRasterizedSlide(
       if (emitTextBox(g, 'raster-gradtext-', gradTextSeq + 1)) gradTextSeq += 1
       continue
     }
-    const measured = measureNodeRect(g, renderRootForMeasure)
     gradSeq += 1
     components.push({
       id: 'raster-grad-' + gradSeq,
       type: 'logo',
       sourceLabel: (getNodeLabel(g) || 'gradient text'),
-      x: asCanonicalDimension(measured.x ?? 0),
-      y: asCanonicalDimension(measured.y ?? 0),
-      width: asCanonicalDimension(measured.width ?? 0),
-      height: asCanonicalDimensionOptional(measured.height ?? 0),
+      ...measuredBox(g, measureRoot),
       content: '<img src="' + uri + '" />',
       style: {},
       locked: false,

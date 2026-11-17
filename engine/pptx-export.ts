@@ -628,6 +628,62 @@ interface SlideXmlResult {
   relsXml: string
 }
 
+function buildBackgroundShapeXml(background: string | undefined, slideEmu: SlideEmu, shapeId: number): string | null {
+  const canvasGradient = parseLinearGradient(background)
+  const canvasColor = parseCssColor(background)
+  if (!canvasGradient && !canvasColor) return null
+  const fillXml = canvasGradient
+    ? buildGradientFillXml(canvasGradient)
+    : buildSolidFillXml(canvasColor as ParsedColor)
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="slide-background"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${slideEmu.w}" cy="${slideEmu.h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${fillXml}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`
+}
+
+// The picture, plus a caption text shape on top when the component also carries text.
+function buildPictureShapes(
+  component: SlideComponent,
+  rId: string,
+  shapeId: number,
+  scaleX: number,
+  scaleY: number,
+  slideRef: string,
+  warnings: string[],
+  fontScale: number,
+): string[] {
+  const x = toEmuOffset(component.x, scaleX)
+  const y = toEmuOffset(component.y, scaleY)
+  const w = toEmu(component.width, scaleX)
+  const imageHeight = typeof component.height === 'number' && component.height > 0 ? component.height : component.width
+  const h = toEmu(imageHeight, scaleY)
+  const shapes = [buildPicXml(component, shapeId, rId, x, y, w, h)]
+
+  // A component may carry both an image and a caption. Emit the caption as a
+  // transparent text shape on top so the picture stays visible beneath it:
+  // retype to 'text' and clear the fill so buildShapeXml produces noFill
+  // (card/panel/row/stat would otherwise paint an opaque default fill).
+  const captionContent = stripImageMarkup(component.content || '')
+  if (toPlainText(captionContent)) {
+    const captionShape = buildShapeXml(
+      { ...component, type: 'text', content: captionContent, style: { ...component.style, backgroundFill: undefined, backgroundColor: undefined } },
+      shapeId + 1,
+      scaleX,
+      scaleY,
+      slideRef,
+      warnings,
+      fontScale,
+    )
+    if (captionShape) shapes.push(captionShape)
+  }
+  return shapes
+}
+
+function buildFallbackNoteXml(): string {
+  return `<p:sp><p:nvSpPr><p:cNvPr id="2" name="fallback-note"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="457200" y="457200"/><a:ext cx="8229600" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"><a:solidFill><a:srgbClr val="666666"/></a:solidFill><a:latin typeface="Arial"/></a:rPr><a:t>${escXml('This slide had no exportable native components.')}</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`
+}
+
+function buildSlideTreeXml(shapes: string[]): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sld xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes.join('')}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`
+}
+
 function buildSlideXml(
   slide: SlidePptxExportInput,
   slideIndex: number,
@@ -657,14 +713,9 @@ function buildSlideXml(
     return rId
   }
 
-  const canvasGradient = parseLinearGradient(slide.canvas.background)
-  const canvasColor = parseCssColor(slide.canvas.background)
-  if (canvasGradient || canvasColor) {
-    const fillXml = canvasGradient
-      ? buildGradientFillXml(canvasGradient)
-      : buildSolidFillXml(canvasColor as ParsedColor)
-    const bg = `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="slide-background"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${slideEmu.w}" cy="${slideEmu.h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${fillXml}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`
-    shapes.push(bg)
+  const background = buildBackgroundShapeXml(slide.canvas.background, slideEmu, shapeId)
+  if (background) {
+    shapes.push(background)
     shapeId += 1
   }
 
@@ -680,34 +731,9 @@ function buildSlideXml(
       const decoded = decodeDataUriImage(imageUri, warnings, componentRef)
       if (decoded) {
         const rId = registerImage(decoded)
-        const x = toEmuOffset(component.x, scaleX)
-        const y = toEmuOffset(component.y, scaleY)
-        const w = toEmu(component.width, scaleX)
-        const imageHeight = typeof component.height === 'number' && component.height > 0 ? component.height : component.width
-        const h = toEmu(imageHeight, scaleY)
-        shapes.push(buildPicXml(component, shapeId, rId, x, y, w, h))
-        shapeId += 1
-
-        // A component may carry both an image and a caption. Emit the caption as a
-        // transparent text shape on top so the picture stays visible beneath it:
-        // retype to 'text' and clear the fill so buildShapeXml produces noFill
-        // (card/panel/row/stat would otherwise paint an opaque default fill).
-        const captionContent = stripImageMarkup(component.content || '')
-        if (toPlainText(captionContent)) {
-          const captionShape = buildShapeXml(
-            { ...component, type: 'text', content: captionContent, style: { ...component.style, backgroundFill: undefined, backgroundColor: undefined } },
-            shapeId,
-            scaleX,
-            scaleY,
-            slideRef,
-            warnings,
-            fontScale,
-          )
-          if (captionShape) {
-            shapes.push(captionShape)
-            shapeId += 1
-          }
-        }
+        const pictureShapes = buildPictureShapes(component, rId, shapeId, scaleX, scaleY, slideRef, warnings, fontScale)
+        shapes.push(...pictureShapes)
+        shapeId += pictureShapes.length
         continue
       }
       // Decoding failed and already warned. An image-only logo has nothing else to
@@ -726,12 +752,11 @@ function buildSlideXml(
   }
 
   if (shapes.length === 0) {
-    const fallback = `<p:sp><p:nvSpPr><p:cNvPr id="2" name="fallback-note"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="457200" y="457200"/><a:ext cx="8229600" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"><a:solidFill><a:srgbClr val="666666"/></a:solidFill><a:latin typeface="Arial"/></a:rPr><a:t>${escXml('This slide had no exportable native components.')}</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`
-    shapes.push(fallback)
+    shapes.push(buildFallbackNoteXml())
     warnings.push(`${slideRef}: no exportable components found; added fallback note.`)
   }
 
-  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sld xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes.join('')}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`
+  const xml = buildSlideTreeXml(shapes)
   return { xml, relsXml: buildSlideRelsXml(imageRels) }
 }
 

@@ -28,6 +28,7 @@
     border-radius: 7px; padding: 7px 12px; font-size: 13px; cursor: pointer;
   }
   .btn:hover { border-color: #3a4452; }
+  .btn:focus-visible, .seg button:focus-visible, .layer:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
   .btn.primary { background: var(--accent); border-color: var(--accent); }
   .btn.primary:hover { filter: brightness(1.08); }
   .btn:disabled { opacity: .5; cursor: default; }
@@ -90,16 +91,25 @@
   #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 200; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 13px; max-width: 72vw; display: none; }
   #toast.show { display: block; }
   #toast.warn { border-color: var(--accent-2); }
+  @media (max-width: 700px) {
+    header { flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
+    header .spacer { display: none; }
+    main { flex-direction: column; }
+    #stage { flex: 1 1 50%; min-height: 200px; }
+    aside { flex: 1 1 40%; border-left: 0; border-top: 1px solid var(--line); min-height: 0; }
+    #empty { max-width: 90%; font-size: 13px; padding: 0 8px; }
+    .modal-actions { flex-wrap: wrap; }
+  }
   .warnlist { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; max-height: 120px; overflow-y: auto; }
 </style>
 </head>
 <body>
 <header>
   <h1>Slides Converter</h1>
-  <div class="seg" id="presetSeg">
-    <button data-preset="native" class="active">Native</button>
-    <button data-preset="16-9">16:9</button>
-    <button data-preset="1-1">1:1</button>
+  <div class="seg" id="presetSeg" role="group" aria-label="Canvas size">
+    <button data-preset="native" class="active" aria-pressed="true">Native</button>
+    <button data-preset="16-9" aria-pressed="false">16:9</button>
+    <button data-preset="1-1" aria-pressed="false">1:1</button>
   </div>
   <button class="btn" id="importBtn">Import</button>
   <input type="file" id="fileInput" accept=".html,.htm,.css,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
@@ -112,14 +122,14 @@
     <div id="empty">Import an HTML slide — or drag &amp; drop it anywhere here — to convert it into an editable PowerPoint deck. Text becomes real text boxes, images and gradients become separate picture/shape layers, all movable and resizable in PowerPoint. A PNG imports as a single picture layer.</div>
     <div id="canvasWrap"><div id="canvas"></div></div>
   </div>
-  <aside id="inspector"><div class="empty-note">No slide loaded yet.</div></aside>
+  <aside id="inspector" aria-label="Converted layers"><div class="empty-note">No slide loaded yet.</div></aside>
 </main>
 
 <div id="importModal">
-  <div class="modal-card">
-    <h3>Import</h3>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <h3 id="importTitle">Import</h3>
     <p>Paste slide HTML below, or choose an .html file (with optional .css) or a PNG/JPG image.</p>
-    <textarea id="pasteArea" placeholder="Paste slide HTML here..."></textarea>
+    <textarea id="pasteArea" aria-label="Slide HTML" placeholder="Paste slide HTML here..."></textarea>
     <div class="modal-actions">
       <button class="btn" id="chooseFilesBtn">Choose file</button>
       <button class="btn" id="pasteCancelBtn">Cancel</button>
@@ -128,7 +138,7 @@
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 /* __SLIDE_ENGINE_BUNDLE__ */
@@ -283,7 +293,7 @@
       const kind = kinds[i];
       const name = escapeHtml(c.sourceLabel || c.type || 'layer');
       const dim = Math.round(c.width) + '×' + Math.round(c.height || 0);
-      return '<li class="layer' + (c.id === state.highlightId ? ' active' : '') + '" data-id="' + escapeHtml(c.id) + '">' +
+      return '<li class="layer' + (c.id === state.highlightId ? ' active' : '') + '" tabindex="0" role="button" aria-pressed="' + (c.id === state.highlightId) + '" data-id="' + escapeHtml(c.id) + '">' +
         '<span class="tag ' + kind + '">' + TAG_LABEL[kind] + '</span>' +
         '<span class="name">' + name + '</span><span class="dim">' + dim + '</span></li>';
     }).join('');
@@ -293,11 +303,20 @@
         '<div class="pill image"><div class="n">' + nonTextCount + '</div><div class="l">picture / shape</div></div>' +
       '</div></div>' +
       '<div><h2>Layers</h2><ul class="layers">' + rows + '</ul></div>';
-    box.querySelectorAll('.layer').forEach((li) => li.addEventListener('click', () => {
+    const selectLayer = (li) => {
       state.highlightId = (state.highlightId === li.dataset.id) ? null : li.dataset.id;
       drawHighlight();
       renderInspector();
-    }));
+      // The list is rebuilt on every selection; put focus back on the same row.
+      const again = [...document.querySelectorAll('#inspector .layer')].find((el) => el.dataset.id === li.dataset.id);
+      if (again) again.focus();
+    };
+    box.querySelectorAll('.layer').forEach((li) => {
+      li.addEventListener('click', () => selectLayer(li));
+      li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectLayer(li); }
+      });
+    });
   }
 
   // ---- Import ----
@@ -318,7 +337,7 @@
       state.canvas = { width: c.width || state.canvas.width, height: c.height || state.canvas.height, background: c.background };
       state.sourceCanvas = { width: state.canvas.width, height: state.canvas.height };
       state.preset = 'native';
-      document.querySelectorAll('#presetSeg button').forEach((b) => b.classList.toggle('active', b.dataset.preset === 'native'));
+      document.querySelectorAll('#presetSeg button').forEach((b) => { const on = b.dataset.preset === 'native'; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
       state.highlightId = null;
       renderPreview();
       const parseCheck = E.validateParsedResult(result);
@@ -408,7 +427,7 @@
     }
     state.preset = preset;
     state.canvas = { width: p.width, height: p.height, background: prev.background };
-    document.querySelectorAll('#presetSeg button').forEach((b) => b.classList.toggle('active', b.dataset.preset === preset));
+    document.querySelectorAll('#presetSeg button').forEach((b) => { const on = b.dataset.preset === preset; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
     renderPreview();
   }
 
@@ -441,13 +460,29 @@
     const b = e.target.closest('button[data-preset]');
     if (b) applyPreset(b.dataset.preset);
   });
-  $('#importBtn').addEventListener('click', () => { $('#importModal').classList.add('show'); $('#pasteArea').focus(); });
-  $('#pasteCancelBtn').addEventListener('click', () => $('#importModal').classList.remove('show'));
+  function openImport() { $('#importModal').classList.add('show'); $('#pasteArea').focus(); }
+  function closeImport() {
+    const wasOpen = $('#importModal').classList.contains('show');
+    $('#importModal').classList.remove('show');
+    if (wasOpen) $('#importBtn').focus();
+  }
+  $('#importBtn').addEventListener('click', openImport);
+  $('#pasteCancelBtn').addEventListener('click', closeImport);
+  document.addEventListener('keydown', (e) => {
+    if (!$('#importModal').classList.contains('show')) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeImport(); return; }
+    if (e.key !== 'Tab') return;
+    // Keep Tab inside the dialog while it is open.
+    const items = [...$('#importModal').querySelectorAll('textarea, button')];
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   $('#pasteImportBtn').addEventListener('click', async () => {
     const html = $('#pasteArea').value;
     // Keep the dialog and the pasted text when the import fails, so nothing typed is lost.
     if (await importFromHtml(html)) {
-      $('#importModal').classList.remove('show');
+      closeImport();
       $('#pasteArea').value = '';
     }
   });

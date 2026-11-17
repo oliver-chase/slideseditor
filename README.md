@@ -122,7 +122,7 @@ engine/                   Pure-TypeScript conversion engine
 scripts/build-bundle.mjs  Zero-dependency bundler
 scripts/validate.sh       Runs the commit gates and every test
 examples/sample-slide.html  A slide to try
-docs/                     Catalog, sharing verdict, accepted items and gate lists
+docs/                     CATALOG.md, SHARING.md, AUDIT-ACCEPTED.md, repo-structure-contract.md and the gate lists
 tests/                    Node tests that bundle the engine from source
 ARCHITECTURE.md           How the pieces fit
 ```

@@ -1,13 +1,5 @@
 import type { SlideCanvas, SlideComponent } from './types'
-import { sanitizeMarkup } from './html-import-markup'
-
-function escapeAttribute(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
+import { escapeAttribute, sanitizeMarkup } from './html-import-markup'
 
 function serializeStyle(component: SlideComponent): string {
   const chunks: string[] = [
@@ -54,7 +46,7 @@ function buildPrintSafeStyles(canvas: SlideCanvas): string {
   const { width: safeWidth, height: safeHeight } = safeCanvasSize(canvas)
   const safeBackground =
     typeof canvas.background === 'string' && canvas.background.trim()
-      ? canvas.background.trim()
+      ? canvas.background.trim().replace(/[<>]/g, '')
       : 'var(--color-bg-card)'
 
   return [

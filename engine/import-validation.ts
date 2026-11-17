@@ -6,6 +6,12 @@ export interface SlideImportFailure {
   message: string
 }
 
+export function isHtmlImportFile(file: File): boolean {
+  const name = file.name.toLowerCase()
+  const type = file.type.toLowerCase()
+  return name.endsWith('.html') || name.endsWith('.htm') || type.includes('text/html')
+}
+
 export function validateImportFile(file: File): SlideImportFailure | null {
   const name = file.name.toLowerCase()
   const type = file.type.toLowerCase()
@@ -61,20 +67,6 @@ export function classifyImportError(error: unknown): SlideImportFailure {
   }
 
   const raw = error instanceof Error ? error.message : String(error)
-  const message = raw.toLowerCase()
-
-  if (message.includes('markup') || message.includes('html')) {
-    return {
-      message: raw,
-    }
-  }
-
-  if (message.includes('unsupported') || message.includes('slide root') || message.includes('positioned')) {
-    return {
-      message: raw,
-    }
-  }
-
   return {
     message: raw || 'Unexpected parser error.',
   }

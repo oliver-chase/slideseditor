@@ -147,6 +147,8 @@ function buildSlideXml(
     } else if (component.type === 'logo') {
       warnings.push(`${componentRef} had no embeddable image data and was skipped.`)
       continue
+    } else if (/<img\b[^>]*\bsrc\s*=/i.test(component.content || '')) {
+      warnings.push(`${componentRef} references an image that is not embedded and the image was skipped.`)
     }
 
     const shapeXml = buildShapeXml(component, shapeId, scaleX, scaleY, slideRef, warnings, fontScale)

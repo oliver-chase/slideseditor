@@ -58,14 +58,16 @@ export function toPlainText(html: string): string {
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
   const noTags = withLineBreaks.replace(/<[^>]*>/g, '')
+  // One pass over the references, so "&#38;amp;" decodes once to "&amp;" and not twice to "&".
+  const NAMED: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' }
   return noTags
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#x([0-9a-f]+);/gi, (_m, hex: string) => codePointText(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_m, dec: string) => codePointText(Number.parseInt(dec, 10)))
-    .replace(/&amp;/gi, '&')
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, ref: string) => {
+      if (ref[0] === '#') {
+        const hex = ref[1] === 'x' || ref[1] === 'X'
+        return codePointText(Number.parseInt(ref.slice(hex ? 2 : 1), hex ? 16 : 10))
+      }
+      return NAMED[ref.toLowerCase()] ?? match
+    })
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
     .trim()

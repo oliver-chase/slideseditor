@@ -247,6 +247,12 @@ const MAX_IMPORT_FILE_SIZE_BYTES = 50_000_000
                  
  
 
+function isHtmlImportFile(file      )          {
+  const name = file.name.toLowerCase()
+  const type = file.type.toLowerCase()
+  return name.endsWith('.html') || name.endsWith('.htm') || type.includes('text/html')
+}
+
 function validateImportFile(file      )                            {
   const name = file.name.toLowerCase()
   const type = file.type.toLowerCase()
@@ -302,20 +308,6 @@ function classifyImportError(error         )                     {
   }
 
   const raw = error instanceof Error ? error.message : String(error)
-  const message = raw.toLowerCase()
-
-  if (message.includes('markup') || message.includes('html')) {
-    return {
-      message: raw,
-    }
-  }
-
-  if (message.includes('unsupported') || message.includes('slide root') || message.includes('positioned')) {
-    return {
-      message: raw,
-    }
-  }
-
   return {
     message: raw || 'Unexpected parser error.',
   }
@@ -2769,14 +2761,6 @@ function buildEmergencyFallback(html        , reason        , warnings          
 }
 
 // ===== html-export.ts =====
-function escapeAttribute(value        )         {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
 function serializeStyle(component                )         {
   const chunks           = [
     'position:absolute',
@@ -2822,7 +2806,7 @@ function buildPrintSafeStyles(canvas             )         {
   const { width: safeWidth, height: safeHeight } = safeCanvasSize(canvas)
   const safeBackground =
     typeof canvas.background === 'string' && canvas.background.trim()
-      ? canvas.background.trim()
+      ? canvas.background.trim().replace(/[<>]/g, '')
       : 'var(--color-bg-card)'
 
   return [
@@ -2987,14 +2971,16 @@ function toPlainText(html        )         {
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
   const noTags = withLineBreaks.replace(/<[^>]*>/g, '')
+  // One pass over the references, so "&#38;amp;" decodes once to "&amp;" and not twice to "&".
+  const NAMED                         = { nbsp: ' ', lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' }
   return noTags
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#x([0-9a-f]+);/gi, (_m, hex        ) => codePointText(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_m, dec        ) => codePointText(Number.parseInt(dec, 10)))
-    .replace(/&amp;/gi, '&')
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, ref        ) => {
+      if (ref[0] === '#') {
+        const hex = ref[1] === 'x' || ref[1] === 'X'
+        return codePointText(Number.parseInt(ref.slice(hex ? 2 : 1), hex ? 16 : 10))
+      }
+      return NAMED[ref.toLowerCase()] ?? match
+    })
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
     .trim()
@@ -3180,9 +3166,14 @@ function parseCssColor(value                    )                     {
   }
   const rgbMatch = raw.match(/^rgba?\(([^,]+),\s*([^,]+),\s*([^,\)]+)(?:,\s*([^\)]+))?\)$/)
   if (rgbMatch) {
-    const vals = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map((part) => Number.parseInt(part.trim(), 10))
+    // A channel is 0-255 or a percentage of 255, and the alpha is 0-1 or a percentage.
+    const vals = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map((part) => {
+      const text = part.trim()
+      return text.endsWith('%') ? Math.round((Number.parseFloat(text) * 255) / 100) : Number.parseInt(text, 10)
+    })
     if (!vals.every((part) => Number.isFinite(part) && part >= 0 && part <= 255)) return null
-    const alphaRaw = rgbMatch[4] ? Number.parseFloat(rgbMatch[4].trim()) : 1
+    const alphaText = rgbMatch[4] ? rgbMatch[4].trim() : ''
+    const alphaRaw = alphaText ? Number.parseFloat(alphaText) / (alphaText.endsWith('%') ? 100 : 1) : 1
     if (!Number.isFinite(alphaRaw)) return null
     return {
       hex: vals.map((part) => part.toString(16).padStart(2, '0')).join('').toUpperCase(),
@@ -3321,10 +3312,11 @@ function parseBoxShadow(value                    )                              
   const candidates = splitCssArgs(value)
   for (const candidate of candidates) {
     if (!candidate || /\binset\b/i.test(candidate)) continue
-    const colorMatch = candidate.match(/(rgba?\([^\)]*\)|#[0-9a-fA-F]{3,8})/)
-    const color = parseCssColor(colorMatch?.[1])
+    const colorToken = (candidate.match(/rgba?\([^)]*\)|hsla?\([^)]*\)|#[0-9a-fA-F]{3,8}|[a-zA-Z]+/g) || [])
+      .find((token) => parseCssColor(token) !== null)
+    const color = parseCssColor(colorToken)
     if (!color) continue
-    const clean = candidate.replace(colorMatch?.[1] || '', ' ')
+    const clean = candidate.replace(colorToken || '', ' ')
     const lengths = clean.match(/-?\d*\.?\d+px/g) || []
     if (lengths.length < 2) continue
     const xToken = lengths[0]
@@ -3396,7 +3388,7 @@ function resolveTypeface(fontFamily                    )         {
 
 function buildTextParagraphs(
   text        ,
-  fontSizePt        ,
+  fontSizePx        ,
   textColorHex        ,
   align        ,
   bold         ,
@@ -3407,10 +3399,10 @@ function buildTextParagraphs(
   letterSpacingPx         ,
 )         {
   const lines = text.split('\n')
-  // fontSizePt arrives as CSS px; PPTX sz is hundredths of a point (px * 0.75 = pt).
+  // fontSizePx arrives as CSS px; PPTX sz is hundredths of a point (px * 0.75 = pt).
   // fontScale (normally 1) shrinks fonts with the geometry when a huge canvas had to
   // be scaled down to fit PowerPoint's 56in axis limit.
-  const size = Math.round(clamp(fontSizePt * 0.75 * fontScale, 4, 400) * 100)
+  const size = Math.round(clamp(fontSizePx * 0.75 * fontScale, 4, 400) * 100)
   const boldAttr = bold ? ' b="1"' : ''
   const italicAttr = italic ? ' i="1"' : ''
   // line-height and letter-spacing arrive as CSS px; spcPts and spc are hundredths of a point.
@@ -3449,8 +3441,8 @@ const IMAGE_MIME_EXT                         = {
                    
  
 
-// Height over width of an image, read from its file header. Returns null when the format is
-// not read (WebP) or the header is short, and the caller then keeps the layer's own box.
+// Height over width of an image, read from its file header (PNG, GIF, JPEG and WebP). Returns null
+// when the header is short or unreadable, and the caller then writes a square.
 function imageAspectRatio(image              )                {
   const b = image.bytes
   let w = 0
@@ -3461,6 +3453,18 @@ function imageAspectRatio(image              )                {
   } else if (image.ext === 'gif' && b.length >= 10) {
     w = b[6] | (b[7] << 8)
     h = b[8] | (b[9] << 8)
+  } else if (image.ext === 'webp' && b.length >= 30 && String.fromCharCode(b[8], b[9], b[10], b[11]) === 'WEBP') {
+    const kind = String.fromCharCode(b[12], b[13], b[14], b[15])
+    if (kind === 'VP8X') {
+      w = 1 + (b[24] | (b[25] << 8) | (b[26] << 16))
+      h = 1 + (b[27] | (b[28] << 8) | (b[29] << 16))
+    } else if (kind === 'VP8 ') {
+      w = (b[26] | (b[27] << 8)) & 0x3fff
+      h = (b[28] | (b[29] << 8)) & 0x3fff
+    } else if (kind === 'VP8L') {
+      w = 1 + (b[21] | ((b[22] & 0x3f) << 8))
+      h = 1 + ((b[22] >> 6) | (b[23] << 2) | ((b[24] & 0x0f) << 10))
+    }
   } else if (image.ext === 'jpeg') {
     // Walk the marker segments until a start-of-frame marker, which holds height then width.
     let i = 2
@@ -3527,6 +3531,14 @@ function buildPicXml(
   return `<p:pic><p:nvPicPr><p:cNvPr id="${shapeId}" name="${name}"/><p:cNvPicPr><a:picLocks noChangeAspect="0"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`
 }
 
+// The corner radius of a roundRect is a fraction of its shorter side, in 1/100000 units, capped at one half.
+// Without a radius the preset's own default applies.
+function roundRectAdjustXml(radiusPx        , widthPx        , heightPx        )         {
+  if (radiusPx <= 1) return '<a:avLst/>'
+  const adjust = Math.min(50_000, Math.round((radiusPx / Math.max(1, Math.min(widthPx, heightPx))) * 100_000))
+  return `<a:avLst><a:gd name="adj" fmla="val ${adjust}"/></a:avLst>`
+}
+
 function buildShapeXml(
   component                ,
   shapeId        ,
@@ -3572,7 +3584,7 @@ function buildShapeXml(
     : ''
   const typeface = resolveTypeface(component.style.fontFamily)
 
-  const spPr = `<p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="${shapeGeom}"><a:avLst/></a:prstGeom>${fillXml}${lineXml}${shadowXml}</p:spPr>`
+  const spPr = `<p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="${shapeGeom}">${shapeGeom === 'roundRect' ? roundRectAdjustXml(cornerRadius, component.width, defaultHeightForComponent(component, text)) : '<a:avLst/>'}</a:prstGeom>${fillXml}${lineXml}${shadowXml}</p:spPr>`
   // A box the browser rendered as a single line must stay a single line: viewer
   // fallback fonts (e.g. Arial for Aptos) run wider and would wrap "LOW" to
   // L/O/W in the exact-measured box. Let short runs overflow instead of wrapping.
@@ -3784,6 +3796,8 @@ function buildSlideXml(
     } else if (component.type === 'logo') {
       warnings.push(`${componentRef} had no embeddable image data and was skipped.`)
       continue
+    } else if (/<img\b[^>]*\bsrc\s*=/i.test(component.content || '')) {
+      warnings.push(`${componentRef} references an image that is not embedded and the image was skipped.`)
     }
 
     const shapeXml = buildShapeXml(component, shapeId, scaleX, scaleY, slideRef, warnings, fontScale)
@@ -3884,12 +3898,6 @@ function convertSlideDocumentsToPptx(slidesInput                                
 
 // ===== import-file-bundle.ts =====
 const STYLESHEET_LINK_SELECTOR = 'link[rel~="stylesheet"][href]'
-
-function isHtmlImportFile(file      )          {
-  const name = file.name.toLowerCase()
-  const type = file.type.toLowerCase()
-  return name.endsWith('.html') || name.endsWith('.htm') || type.includes('text/html')
-}
 
 function isCssImportFile(file      )          {
   const name = file.name.toLowerCase()
@@ -4001,7 +4009,8 @@ async function inlineCompanionStylesheets(
 
     const styleElement = doc.createElement('style')
     styleElement.setAttribute('data-import-companion-href', href)
-    styleElement.textContent = cssText
+    // A closing style tag inside the file would end the element early once the page is serialized.
+    styleElement.textContent = cssText.replace(/<\/style/gi, '<\\/style')
     link.replaceWith(styleElement)
     inlinedHrefs.push(href)
     hasChanges = true

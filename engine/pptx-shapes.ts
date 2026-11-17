@@ -27,7 +27,7 @@ function resolveTypeface(fontFamily: string | undefined): string {
 
 function buildTextParagraphs(
   text: string,
-  fontSizePt: number,
+  fontSizePx: number,
   textColorHex: string,
   align: string,
   bold: boolean,
@@ -38,10 +38,10 @@ function buildTextParagraphs(
   letterSpacingPx?: number,
 ): string {
   const lines = text.split('\n')
-  // fontSizePt arrives as CSS px; PPTX sz is hundredths of a point (px * 0.75 = pt).
+  // fontSizePx arrives as CSS px; PPTX sz is hundredths of a point (px * 0.75 = pt).
   // fontScale (normally 1) shrinks fonts with the geometry when a huge canvas had to
   // be scaled down to fit PowerPoint's 56in axis limit.
-  const size = Math.round(clamp(fontSizePt * 0.75 * fontScale, 4, 400) * 100)
+  const size = Math.round(clamp(fontSizePx * 0.75 * fontScale, 4, 400) * 100)
   const boldAttr = bold ? ' b="1"' : ''
   const italicAttr = italic ? ' i="1"' : ''
   // line-height and letter-spacing arrive as CSS px; spcPts and spc are hundredths of a point.
@@ -80,8 +80,8 @@ export interface DecodedImage {
   bytes: Uint8Array
 }
 
-// Height over width of an image, read from its file header. Returns null when the format is
-// not read (WebP) or the header is short, and the caller then keeps the layer's own box.
+// Height over width of an image, read from its file header (PNG, GIF, JPEG and WebP). Returns null
+// when the header is short or unreadable, and the caller then writes a square.
 export function imageAspectRatio(image: DecodedImage): number | null {
   const b = image.bytes
   let w = 0
@@ -92,6 +92,18 @@ export function imageAspectRatio(image: DecodedImage): number | null {
   } else if (image.ext === 'gif' && b.length >= 10) {
     w = b[6] | (b[7] << 8)
     h = b[8] | (b[9] << 8)
+  } else if (image.ext === 'webp' && b.length >= 30 && String.fromCharCode(b[8], b[9], b[10], b[11]) === 'WEBP') {
+    const kind = String.fromCharCode(b[12], b[13], b[14], b[15])
+    if (kind === 'VP8X') {
+      w = 1 + (b[24] | (b[25] << 8) | (b[26] << 16))
+      h = 1 + (b[27] | (b[28] << 8) | (b[29] << 16))
+    } else if (kind === 'VP8 ') {
+      w = (b[26] | (b[27] << 8)) & 0x3fff
+      h = (b[28] | (b[29] << 8)) & 0x3fff
+    } else if (kind === 'VP8L') {
+      w = 1 + (b[21] | ((b[22] & 0x3f) << 8))
+      h = 1 + ((b[22] >> 6) | (b[23] << 2) | ((b[24] & 0x0f) << 10))
+    }
   } else if (image.ext === 'jpeg') {
     // Walk the marker segments until a start-of-frame marker, which holds height then width.
     let i = 2
@@ -158,6 +170,14 @@ export function buildPicXml(
   return `<p:pic><p:nvPicPr><p:cNvPr id="${shapeId}" name="${name}"/><p:cNvPicPr><a:picLocks noChangeAspect="0"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`
 }
 
+// The corner radius of a roundRect is a fraction of its shorter side, in 1/100000 units, capped at one half.
+// Without a radius the preset's own default applies.
+function roundRectAdjustXml(radiusPx: number, widthPx: number, heightPx: number): string {
+  if (radiusPx <= 1) return '<a:avLst/>'
+  const adjust = Math.min(50_000, Math.round((radiusPx / Math.max(1, Math.min(widthPx, heightPx))) * 100_000))
+  return `<a:avLst><a:gd name="adj" fmla="val ${adjust}"/></a:avLst>`
+}
+
 export function buildShapeXml(
   component: SlideComponent,
   shapeId: number,
@@ -203,7 +223,7 @@ export function buildShapeXml(
     : ''
   const typeface = resolveTypeface(component.style.fontFamily)
 
-  const spPr = `<p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="${shapeGeom}"><a:avLst/></a:prstGeom>${fillXml}${lineXml}${shadowXml}</p:spPr>`
+  const spPr = `<p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="${shapeGeom}">${shapeGeom === 'roundRect' ? roundRectAdjustXml(cornerRadius, component.width, defaultHeightForComponent(component, text)) : '<a:avLst/>'}</a:prstGeom>${fillXml}${lineXml}${shadowXml}</p:spPr>`
   // A box the browser rendered as a single line must stay a single line: viewer
   // fallback fonts (e.g. Arial for Aptos) run wider and would wrap "LOW" to
   // L/O/W in the exact-measured box. Let short runs overflow instead of wrapping.

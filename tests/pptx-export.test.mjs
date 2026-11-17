@@ -123,4 +123,28 @@ const twoParts = unzip(await E.convertSlideDocumentsToPptx([{ id: 's', title: 't
 assert.ok(twoParts['ppt/slides/slide1.xml'].toString().includes('First slide'), 'slide 1 is exported')
 assert.ok(twoParts['ppt/slides/slide2.xml'] && twoParts['ppt/slides/slide2.xml'].toString().includes('Second slide'), 'slide 2 is exported')
 
+// Percent colors, named shadow colors and rounded corners.
+const percent = await slideXml('Percent', { color: 'rgb(50%, 50%, 50%)', boxShadow: '2px 2px 4px black', backgroundColor: '#eeeeee', borderRadius: 4 }, 40, 40)
+assert.ok(percent.includes('srgbClr val="808080"'), 'a percent rgb color converts')
+assert.ok(percent.includes('<a:outerShdw'), 'a named shadow color keeps the shadow')
+const card = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [{ id: 'c', type: 'card', content: 'Card', x: 0, y: 0, width: 200, height: 200, locked: false, visible: true, style: { borderRadius: 4, backgroundColor: '#ffffff' } }] })
+const cardXml = unzip(await E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: card }]).blob.arrayBuffer())['ppt/slides/slide1.xml'].toString('utf8')
+assert.ok(cardXml.includes('<a:gd name="adj" fmla="val 2000"/>'), 'a 4px radius on a 200px card is 2% of the short side')
+
+// A reference decodes once.
+const ampersand = await slideXml('&#38;amp;')
+assert.ok(ampersand.includes('&amp;amp;'), 'a numeric ampersand followed by amp; is not decoded twice')
+
+// A WebP with no height keeps its aspect, and an image that is not embedded is reported.
+const webp = Buffer.alloc(30)
+webp.write('RIFF', 0); webp.writeUInt32LE(22, 4); webp.write('WEBP', 8); webp.write('VP8X', 12); webp.writeUInt32LE(10, 16)
+webp.writeUIntLE(8 - 1, 24, 3); webp.writeUIntLE(4 - 1, 27, 3)
+const webpDoc = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [{ id: 'w', type: 'logo', content: `<img src="data:image/webp;base64,${webp.toString('base64')}" />`, x: 0, y: 0, width: 400, locked: false, visible: true, style: {} }] })
+const webpXml = unzip(await E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: webpDoc }]).blob.arrayBuffer())['ppt/slides/slide1.xml'].toString('utf8')
+const webpExt = webpXml.match(/<p:pic>[\s\S]*?<a:ext cx="(\d+)" cy="(\d+)"/)
+assert.equal(Number(webpExt[1]) / Number(webpExt[2]), 2, 'a WebP with no height keeps its 2:1 aspect')
+const remote = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [{ id: 'r', type: 'text', content: '<img src="https://example.test/a.png">Caption', x: 0, y: 0, width: 200, height: 30, locked: false, visible: true, style: {} }] })
+const remoteResult = E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: remote }])
+assert.ok(remoteResult.warnings.some((w) => w.includes('r') && w.includes('not embedded')), 'an image that is not embedded is reported')
+
 console.log('pptx-export tests passed')

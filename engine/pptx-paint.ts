@@ -69,9 +69,14 @@ export function parseCssColor(value: string | undefined): ParsedColor | null {
   }
   const rgbMatch = raw.match(/^rgba?\(([^,]+),\s*([^,]+),\s*([^,\)]+)(?:,\s*([^\)]+))?\)$/)
   if (rgbMatch) {
-    const vals = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map((part) => Number.parseInt(part.trim(), 10))
+    // A channel is 0-255 or a percentage of 255, and the alpha is 0-1 or a percentage.
+    const vals = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map((part) => {
+      const text = part.trim()
+      return text.endsWith('%') ? Math.round((Number.parseFloat(text) * 255) / 100) : Number.parseInt(text, 10)
+    })
     if (!vals.every((part) => Number.isFinite(part) && part >= 0 && part <= 255)) return null
-    const alphaRaw = rgbMatch[4] ? Number.parseFloat(rgbMatch[4].trim()) : 1
+    const alphaText = rgbMatch[4] ? rgbMatch[4].trim() : ''
+    const alphaRaw = alphaText ? Number.parseFloat(alphaText) / (alphaText.endsWith('%') ? 100 : 1) : 1
     if (!Number.isFinite(alphaRaw)) return null
     return {
       hex: vals.map((part) => part.toString(16).padStart(2, '0')).join('').toUpperCase(),
@@ -210,10 +215,11 @@ export function parseBoxShadow(value: string | undefined): { x: number; y: numbe
   const candidates = splitCssArgs(value)
   for (const candidate of candidates) {
     if (!candidate || /\binset\b/i.test(candidate)) continue
-    const colorMatch = candidate.match(/(rgba?\([^\)]*\)|#[0-9a-fA-F]{3,8})/)
-    const color = parseCssColor(colorMatch?.[1])
+    const colorToken = (candidate.match(/rgba?\([^)]*\)|hsla?\([^)]*\)|#[0-9a-fA-F]{3,8}|[a-zA-Z]+/g) || [])
+      .find((token) => parseCssColor(token) !== null)
+    const color = parseCssColor(colorToken)
     if (!color) continue
-    const clean = candidate.replace(colorMatch?.[1] || '', ' ')
+    const clean = candidate.replace(colorToken || '', ' ')
     const lengths = clean.match(/-?\d*\.?\d+px/g) || []
     if (lengths.length < 2) continue
     const xToken = lengths[0]

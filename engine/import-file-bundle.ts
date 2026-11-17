@@ -1,12 +1,6 @@
-import { MAX_IMPORT_FILE_SIZE_BYTES } from './import-validation'
+import { MAX_IMPORT_FILE_SIZE_BYTES, isHtmlImportFile } from './import-validation'
 
 const STYLESHEET_LINK_SELECTOR = 'link[rel~="stylesheet"][href]'
-
-function isHtmlImportFile(file: File): boolean {
-  const name = file.name.toLowerCase()
-  const type = file.type.toLowerCase()
-  return name.endsWith('.html') || name.endsWith('.htm') || type.includes('text/html')
-}
 
 function isCssImportFile(file: File): boolean {
   const name = file.name.toLowerCase()
@@ -118,7 +112,8 @@ export async function inlineCompanionStylesheets(
 
     const styleElement = doc.createElement('style')
     styleElement.setAttribute('data-import-companion-href', href)
-    styleElement.textContent = cssText
+    // A closing style tag inside the file would end the element early once the page is serialized.
+    styleElement.textContent = cssText.replace(/<\/style/gi, '<\\/style')
     link.replaceWith(styleElement)
     inlinedHrefs.push(href)
     hasChanges = true

@@ -13,7 +13,7 @@ It is built for anyone who designs slides in HTML and needs the result as a nati
 ## Try it in a minute
 
 1. Get the tool: open [slideeditor.html on GitHub](https://github.com/oliver-chase/slideseditor/blob/main/slideeditor.html), choose Download raw file, and open the saved file in a browser. In a clone of this repo it sits at the top level.
-2. Press Import, choose [examples/sample-slide.html](examples/sample-slide.html) (or download it the same way), and the converted layers appear.
+2. Press Import, choose [examples/sample-slide.html](examples/sample-slide.html) (or download it the same way), and the converted layers appear. For a richer test, try [examples/field-notes.html](examples/field-notes.html), which adds gradient text, a dashed note, a shadow card, a list and an SVG compass.
 3. Press Export PPTX and open the file in PowerPoint.
 
 The sample converts to one artwork picture for the gradient card and five editable text layers. The dashed boxes mark each layer:

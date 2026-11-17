@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Field notes: coastal survey</title>
+<style>
+  body { margin: 0; width: 1280px; height: 720px; position: relative; overflow: hidden; background: hsl(38, 45%, 93%); font-family: Georgia, serif; color: hsl(210, 35%, 18%); }
+  .tide { position: absolute; left: -120px; top: 560px; width: 1520px; height: 220px; background: linear-gradient(90deg, hsl(196, 70%, 38%), hsl(172, 55%, 42%)); border-radius: 220px 220px 0 0; }
+  .label { position: absolute; left: 70px; top: 48px; width: 500px; font-family: Arial, sans-serif; font-size: 16px; font-weight: 700; letter-spacing: 6px; color: hsl(14, 78%, 46%); }
+  .headline { position: absolute; left: 70px; top: 84px; width: 760px; font-size: 76px; font-weight: 700; line-height: 82px; background: linear-gradient(90deg, hsl(210, 60%, 22%), hsl(196, 75%, 36%)); -webkit-background-clip: text; color: transparent; }
+  .lede { position: absolute; left: 70px; top: 262px; width: 640px; font-size: 24px; line-height: 36px; }
+  .lede b { color: hsl(14, 78%, 46%); }
+  .lede i { color: hsl(196, 75%, 30%); }
+  .note { position: absolute; left: 70px; top: 400px; width: 330px; height: 150px; padding: 18px 22px; box-sizing: border-box; background: hsl(48, 90%, 88%); border: 3px dashed hsl(14, 78%, 46%); border-radius: 14px; font-size: 21px; line-height: 30px; }
+  .card { position: absolute; left: 440px; top: 400px; width: 330px; height: 150px; box-sizing: border-box; padding: 18px 22px; background: #ffffff; border-radius: 22px; box-shadow: 8px 10px 18px rgba(20, 40, 60, 0.28); font-size: 21px; line-height: 30px; }
+  .card::before { content: ""; position: absolute; left: 22px; top: -12px; width: 64px; height: 12px; background: hsl(14, 78%, 46%); border-radius: 6px 6px 0 0; }
+  .stat { position: absolute; left: 850px; top: 118px; width: 330px; font-family: Arial, sans-serif; font-size: 120px; font-weight: 700; color: hsl(172, 60%, 30%); }
+  .stat-label { position: absolute; left: 856px; top: 250px; width: 320px; font-family: Arial, sans-serif; font-size: 20px; line-height: 28px; letter-spacing: 1px; color: hsl(210, 20%, 40%); }
+  .list { position: absolute; left: 850px; top: 330px; width: 340px; font-size: 22px; line-height: 34px; margin: 0; padding: 0; list-style: none; }
+  .compass { position: absolute; left: 1090px; top: 440px; }
+  .foot { position: absolute; left: 70px; top: 640px; width: 700px; font-family: Arial, sans-serif; font-size: 18px; color: #ffffff; }
+</style>
+</head>
+<body>
+  <div class="tide"></div>
+  <div class="label">FIELD NOTES / COASTAL SURVEY</div>
+  <div class="headline">Where the marsh meets the sea</div>
+  <div class="lede">Three seasons of <b>tide gauges</b>, drone passes and <i>hand counts</i> show the shoreline moving faster than the maps say.</div>
+  <div class="note">Dashed note: the north bank lost <b>11 meters</b> since March.</div>
+  <div class="card">Shadow card: eelgrass cover is <i>up 9%</i> behind the new sill.</div>
+  <div class="stat">14.2</div>
+  <div class="stat-label">millimeters of sea-level rise per year at gauge 3</div>
+  <ul class="list">
+    <li>Gauge 1: steady</li>
+    <li>Gauge 2: <b>rising</b></li>
+    <li>Gauge 3: fastest on record</li>
+  </ul>
+  <svg class="compass" width="140" height="140" viewBox="0 0 140 140">
+    <circle cx="70" cy="70" r="62" fill="#ffffff" stroke="hsl(210, 35%, 18%)" stroke-width="4"/>
+    <polygon points="70,14 82,70 70,126 58,70" fill="hsl(14, 78%, 46%)"/>
+    <circle cx="70" cy="70" r="8" fill="hsl(210, 35%, 18%)"/>
+    <text x="70" y="34" font-size="16" text-anchor="middle" fill="#ffffff" font-family="Arial">N</text>
+  </svg>
+  <div class="foot">Survey team: three people, one boat, one very patient dog.</div>
+</body>
+</html>

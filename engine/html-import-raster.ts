@@ -140,7 +140,7 @@ async function rasterizeElementInline(el: HTMLElement, win: Window, scale: numbe
 // Render the whole slide in context (keeps the page <style>, so boxes/meters/gradients
 // lay out exactly as designed) with every text glyph stripped, producing the flat art
 // layer. Returns a full-canvas PNG data URI, or null if the render fails.
-// The artwork is drawn through an SVG image, which cannot load web addresses. Images that the
+// The artwork is drawn through an SVG image, which cannot load web addresses. Images and fonts that the
 // slide names at a web address are fetched first and embedded as data URIs, up to a size limit each.
 const REMOTE_ASSET_MAX_BYTES = 5_000_000
 
@@ -170,6 +170,19 @@ async function inlineRemoteImages(root: HTMLElement): Promise<void> {
   }))
 }
 
+async function inlineRemoteFonts(cssText: string): Promise<string> {
+  const urls = new Set<string>()
+  for (const block of cssText.match(/@font-face\s*\{[^}]*\}/gi) || []) {
+    for (const match of block.matchAll(/url\(\s*["']?(https?:[^"')]+)["']?\s*\)/gi)) urls.add(match[1])
+  }
+  let result = cssText
+  for (const url of urls) {
+    const data = await fetchAsDataUrl(url)
+    if (data) result = result.split(url).join(data)
+  }
+  return result
+}
+
 async function rasterizeArtLayer(
   renderRoot: HTMLElement,
   win: Window,
@@ -189,7 +202,11 @@ async function rasterizeArtLayer(
   for (let j = 0; j < bodyCs.length; j += 1) bodyCss += bodyCs[j] + ':' + bodyCs.getPropertyValue(bodyCs[j]) + ';'
   const wrap = document.createElementNS(XHTML_NS, 'div') as unknown as HTMLElement
   wrap.setAttribute('style', bodyCss + 'width:' + w + 'px;height:' + h + 'px;margin:0;position:relative;overflow:hidden;')
-  for (const st of Array.from(sdoc.querySelectorAll('style'))) wrap.appendChild(st.cloneNode(true))
+  for (const st of Array.from(sdoc.querySelectorAll('style'))) {
+    const styleClone = st.cloneNode(true) as HTMLStyleElement
+    styleClone.textContent = await inlineRemoteFonts(styleClone.textContent || '')
+    wrap.appendChild(styleClone)
+  }
   await inlineRemoteImages(clone)
   for (const ch of Array.from(clone.childNodes)) wrap.appendChild(ch)
   const inner = new XMLSerializer().serializeToString(wrap)

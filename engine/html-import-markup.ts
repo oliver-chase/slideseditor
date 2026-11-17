@@ -99,22 +99,29 @@ export function buildSanitizedContentNode(node: HTMLElement): HTMLElement {
 }
 
 export function inferType(node: HTMLElement): SlideComponentType {
-  const className = (node.className || '').toString().toLowerCase()
+  // getAttribute reads the class of an HTML and an SVG element alike. Class names match as whole
+  // words, split on spaces, hyphens, underscores and camelCase, so "status" is not "stat".
+  const classWords = (node.getAttribute('class') || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+  const hasClass = (...words: string[]) => words.some((word) => classWords.includes(word))
   const text = (node.textContent || '').trim().toLowerCase()
   const tag = node.tagName.toLowerCase()
   const alt = (node.getAttribute('alt') || '').toLowerCase()
 
   if (tag === 'svg') return 'logo'
-  if (tag === 'img' && (className.includes('logo') || alt.includes('logo'))) return 'logo'
-  if (className.includes('subheading') || className.includes('subtitle')) return 'subheading'
-  if (tag === 'h1' || tag === 'h2' || className.includes('heading') || className.includes('title')) return 'heading'
+  if (tag === 'img' && (hasClass('logo') || alt.includes('logo'))) return 'logo'
+  if (hasClass('subheading', 'subtitle')) return 'subheading'
+  if (tag === 'h1' || tag === 'h2' || hasClass('heading', 'title')) return 'heading'
   if (tag === 'h3' || tag === 'h4') return 'subheading'
-  if (className.includes('tagline') || className.includes('tag-line')) return 'tag-line'
-  if (className.includes('stat') || className.includes('metric')) return 'stat'
-  if (className.includes('card') || className.includes('artifact') || /\bart\b/.test(className)) return 'card'
-  if (className.includes('row')) return 'row'
-  if (className.includes('panel') || className.includes('container')) return 'panel'
-  if (text.length <= 32 && /\d/.test(text) && className.includes('kpi')) return 'stat'
+  if (hasClass('tagline') || (hasClass('tag') && hasClass('line'))) return 'tag-line'
+  if (hasClass('stat', 'stats', 'metric', 'metrics')) return 'stat'
+  if (hasClass('card', 'cards', 'artifact', 'art')) return 'card'
+  if (hasClass('row', 'rows')) return 'row'
+  if (hasClass('panel', 'container')) return 'panel'
+  if (text.length <= 32 && /\d/.test(text) && hasClass('kpi')) return 'stat'
   return 'text'
 }
 

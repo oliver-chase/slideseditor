@@ -4,7 +4,7 @@ import type { SlideEmu } from './pptx-shared'
 import { buildZipStore } from './pptx-zip'
 import { buildGradientFillXml, buildSolidFillXml, parseCssColor, parseLinearGradient } from './pptx-paint'
 import type { ParsedColor } from './pptx-paint'
-import { buildPicXml, buildShapeXml, decodeDataUriImage, extractComponentImageUri, stripImageMarkup } from './pptx-shapes'
+import { buildPicXml, buildShapeXml, decodeDataUriImage, extractComponentImageUri, imageAspectRatio, stripImageMarkup } from './pptx-shapes'
 import type { DecodedImage } from './pptx-shapes'
 import { buildAppPropsXml, buildContentTypesXml, buildCorePropsXml, buildPresentationRelsXml, buildPresentationXml, buildRootRelsXml, buildSlideLayoutRelsXml, buildSlideLayoutXml, buildSlideMasterRelsXml, buildSlideMasterXml, buildSlideRelsXml, buildThemeXml } from './pptx-parts'
 
@@ -45,6 +45,7 @@ function buildBackgroundShapeXml(background: string | undefined, slideEmu: Slide
 function buildPictureShapes(
   component: SlideComponent,
   rId: string,
+  aspect: number | null,
   shapeId: number,
   scaleX: number,
   scaleY: number,
@@ -55,7 +56,7 @@ function buildPictureShapes(
   const x = toEmuOffset(component.x, scaleX)
   const y = toEmuOffset(component.y, scaleY)
   const w = toEmu(component.width, scaleX)
-  const imageHeight = typeof component.height === 'number' && component.height > 0 ? component.height : component.width
+  const imageHeight = typeof component.height === 'number' && component.height > 0 ? component.height : component.width * (aspect ?? 1)
   const h = toEmu(imageHeight, scaleY)
   const shapes = [buildPicXml(component, shapeId, rId, x, y, w, h)]
 
@@ -134,7 +135,7 @@ function buildSlideXml(
       const decoded = decodeDataUriImage(imageUri, warnings, componentRef)
       if (decoded) {
         const rId = registerImage(decoded)
-        const pictureShapes = buildPictureShapes(component, rId, shapeId, scaleX, scaleY, slideRef, warnings, fontScale)
+        const pictureShapes = buildPictureShapes(component, rId, imageAspectRatio(decoded), shapeId, scaleX, scaleY, slideRef, warnings, fontScale)
         shapes.push(...pictureShapes)
         shapeId += pictureShapes.length
         continue

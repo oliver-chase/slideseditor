@@ -48,6 +48,10 @@ export function escXml(value: string): string {
     .replace(/'/g, '&apos;')
 }
 
+function codePointText(codePoint: number): string {
+  return codePoint > 0 && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : ''
+}
+
 export function toPlainText(html: string): string {
   const withLineBreaks = html
     .replace(/<br\s*\/?>(\s*)/gi, '\n')
@@ -59,7 +63,8 @@ export function toPlainText(html: string): string {
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_m, hex: string) => codePointText(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_m, dec: string) => codePointText(Number.parseInt(dec, 10)))
     .replace(/&amp;/gi, '&')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')

@@ -25,14 +25,6 @@ export function normalizeImportedHtmlMarkup(html: string, warnings: string[]): s
   return `${prefix}${sliced}`.trim()
 }
 
-function createSettlingTimeout(timeoutMs: number): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    window.setTimeout(() => {
-      reject(new Error(`Timeout waiting for import render settle after ${timeoutMs}ms.`))
-    }, timeoutMs)
-  })
-}
-
 async function waitForImageLoad(image: HTMLImageElement): Promise<void> {
   if (image.complete) return
   await new Promise((resolve) => {
@@ -63,13 +55,17 @@ async function settleRenderSnapshot(doc: Document): Promise<void> {
     pending.push(waitForImageLoad(image))
   }
 
+  const timeoutMs = 1500
+  let timer: number | undefined
+  const timeout = new Promise<void>((_resolve, reject) => {
+    timer = window.setTimeout(() => reject(new Error(`Timeout waiting for import render settle after ${timeoutMs}ms.`)), timeoutMs)
+  })
   try {
-    await Promise.race([
-      Promise.all(pending),
-      createSettlingTimeout(1500),
-    ])
+    await Promise.race([Promise.all(pending), timeout])
   } catch {
     // Best-effort render settling for import fidelity.
+  } finally {
+    window.clearTimeout(timer)
   }
 }
 

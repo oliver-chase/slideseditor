@@ -80,6 +80,35 @@ export interface DecodedImage {
   bytes: Uint8Array
 }
 
+// Height over width of an image, read from its file header. Returns null when the format is
+// not read (WebP) or the header is short, and the caller then keeps the layer's own box.
+export function imageAspectRatio(image: DecodedImage): number | null {
+  const b = image.bytes
+  let w = 0
+  let h = 0
+  if (image.ext === 'png' && b.length >= 24) {
+    w = ((b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19]) >>> 0
+    h = ((b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23]) >>> 0
+  } else if (image.ext === 'gif' && b.length >= 10) {
+    w = b[6] | (b[7] << 8)
+    h = b[8] | (b[9] << 8)
+  } else if (image.ext === 'jpeg') {
+    // Walk the marker segments until a start-of-frame marker, which holds height then width.
+    let i = 2
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) { i += 1; continue }
+      const marker = b[i + 1]
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        h = (b[i + 5] << 8) | b[i + 6]
+        w = (b[i + 7] << 8) | b[i + 8]
+        break
+      }
+      i += 2 + ((b[i + 2] << 8) | b[i + 3])
+    }
+  }
+  return w > 0 && h > 0 ? h / w : null
+}
+
 export function decodeDataUriImage(uri: string, warnings: string[], ref: string): DecodedImage | null {
   const match = uri.match(/^data:([^;,]+)((?:;[^,]*)?),([\s\S]*)$/i)
   if (!match) return null

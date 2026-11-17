@@ -12,12 +12,18 @@ function loadImageFromUrl(url: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     if (typeof Image === 'undefined') { resolve(null); return }
     let settled = false
-    const done = (v: HTMLImageElement | null) => { if (!settled) { settled = true; resolve(v) } }
+    let timer: number | undefined
+    const done = (v: HTMLImageElement | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(v)
+    }
     const img = new Image()
     img.onload = () => done(img)
     img.onerror = () => done(null)
     // Never hang the import if the image never fires load/error.
-    setTimeout(() => done(null), 8000)
+    timer = window.setTimeout(() => done(null), 8000)
     img.src = url
   })
 }

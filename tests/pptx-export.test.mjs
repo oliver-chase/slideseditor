@@ -98,4 +98,17 @@ for (const [name, data] of Object.entries(parts)) {
 const neutralHtml = E.convertSlideComponentsToHtml({ canvas: { width: 800, height: 400 }, components: [] })
 assert.ok(!/oliver/i.test(neutralHtml), 'the HTML export carries no owner name')
 
+// A picture with no height keeps its own aspect ratio: a 4 by 2 image 400 wide is 200 high.
+const wide = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAEElEQVR4nGP4z8AARwzIHABvqgf5gNwAKAAAAABJRU5ErkJggg=='
+const noHeight = { id: 'p1', type: 'logo', content: `<img src="${wide}" />`, x: 0, y: 0, width: 400, locked: false, visible: true, style: {} }
+const noHeightDoc = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [noHeight] })
+const noHeightParts = unzip(await E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: noHeightDoc }]).blob.arrayBuffer())
+const picXml = noHeightParts['ppt/slides/slide1.xml'].toString('utf8')
+const ext = picXml.match(/<p:pic>[\s\S]*?<a:ext cx="(\d+)" cy="(\d+)"/)
+assert.equal(Number(ext[1]) / Number(ext[2]), 2, 'a picture with no height keeps a 2:1 aspect')
+
+// Numeric character references in text become the character.
+const entities = await slideXml('It&#x27;s &#39;fine&#39; &amp; &#65;')
+assert.ok(entities.includes('It&apos;s &apos;fine&apos; &amp; A'), 'numeric entities decode, then the text is XML-escaped once')
+
 console.log('pptx-export tests passed')

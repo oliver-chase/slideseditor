@@ -271,6 +271,9 @@ export function shouldImportFlowNode(
 // text block are skipped, so a paragraph with an inline span stays one text box while
 // a card holding a separate heading and body yields two. Positioned descendants are
 // excluded because they are already imported as their own absolute layers.
+// Elements that flow inside a line of text. They stay part of their parent's text box.
+const INLINE_TEXT_TAGS = new Set(['a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'em', 'i', 'kbd', 'mark', 'q', 's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'time', 'u', 'var', 'br', 'wbr'])
+
 export function collectNestedTextLeaves(
   container: HTMLElement,
   absoluteIdSet: Set<string>,
@@ -292,10 +295,11 @@ export function collectNestedTextLeaves(
       // A nested positioned container owns its own subtree in its own pass; don't
       // pull its descendants up into this container (which would duplicate them).
       if (ancestor !== container && ancestorId && absoluteIdSet.has(ancestorId)) { skip = true; break }
-      // Keep text atomic: skip anything inside a text-bearing element, INCLUDING the
-      // container itself (so inline <span>/<strong>/<em> in a positioned heading or
-      // paragraph is not split out and left overlapping the remaining text).
-      if (hasOwnTextNode(ancestor)) { skip = true; break }
+      // Keep text atomic: skip anything inside a text-bearing element, including the container
+      // itself, so an inline span, strong or em in a positioned heading or paragraph is not split
+      // out and left overlapping the remaining text. A block child of a container that also has
+      // its own text is split out, and the container keeps only its own text.
+      if (hasOwnTextNode(ancestor) && !(ancestor === container && !INLINE_TEXT_TAGS.has(tag))) { skip = true; break }
       if (ancestor === container) break
       ancestor = ancestor.parentElement
     }

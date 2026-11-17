@@ -1,4 +1,5 @@
 import type { SlideCanvas, SlideComponent } from './types'
+import { sanitizeMarkup } from './html-import-markup'
 
 function escapeAttribute(value: string): string {
   return value
@@ -36,13 +37,10 @@ function serializeStyle(component: SlideComponent): string {
   return chunks.join(';')
 }
 
+// Imported content is already sanitized. In a browser the export runs it through the shared sanitizer
+// again; without a DOM (the Node tests) the content is written as given.
 function sanitizeContent(content: string): string {
-  return content
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
-    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
-    .replace(/\s(href|src)\s*=\s*"javascript:[^"]*"/gi, '')
-    .replace(/\s(href|src)\s*=\s*'javascript:[^']*'/gi, '')
+  return typeof DOMParser === 'undefined' ? content : sanitizeMarkup(content)
 }
 
 function safeCanvasSize(canvas: SlideCanvas): { width: number; height: number } {

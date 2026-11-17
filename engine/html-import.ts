@@ -6,7 +6,7 @@ import { inlineExternalStylesheets, parseRuleDeclarations } from './html-import-
 import { buildRenderSnapshot, measureNodeRect, normalizeImportedHtmlMarkup, readComputedStyleSafe } from './html-import-render'
 import { extractStyle, normalizeBackgroundFill, parseLength, resolveComputedBackground } from './html-import-values'
 import { canonicalCanvasValue, clampAutoImportCanvasAxis, measureContentBounds, normalizeCanvasToContentBounds, parseCanvasPx } from './html-import-position'
-import { buildSanitizedContentNode, getCanvasRoot, getNodeLabel, shouldImportFlowNode, shouldImportNode } from './html-import-markup'
+import { buildSanitizedContentNode, getCanvasRoot, sanitizeMarkup, getNodeLabel, shouldImportFlowNode, shouldImportNode } from './html-import-markup'
 import { extractPseudoLayers } from './html-import-pseudo'
 import { buildRasterizedSlide, rasterizeSvgComponents } from './html-import-raster'
 import { buildNodeComponents, planNestedTextSplit } from './html-import-nodes'
@@ -38,7 +38,7 @@ function buildFallbackImportResult(
     height: parseCanvasPx(rootStyle.height ?? attrHeight, 'height', warnings) || DEFAULT_CANVAS_HEIGHT,
   }
   const sanitizedRoot = root ? buildSanitizedContentNode(root) : null
-  const content = sanitizedRoot?.innerHTML.trim() || sanitizedRoot?.outerHTML.trim() || (html ? html.trim() : '')
+  const content = sanitizedRoot?.innerHTML.trim() || sanitizedRoot?.outerHTML.trim() || (html ? sanitizeMarkup(html.trim()) : '')
   const label = root ? getNodeLabel(root) : 'html-root'
   const components: SlideComponent[] = [{
     id: 'import-001',

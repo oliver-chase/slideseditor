@@ -51,6 +51,7 @@ const PUBLIC_API = [
   'convertSlideDocumentsToPptx',
   'createSlideDocument',
   'validateImportFile',
+  'sanitizeMarkup',
   'validateHtmlImportInput',
   'validateParsedResult',
   'classifyImportError',

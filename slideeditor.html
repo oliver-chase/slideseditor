@@ -1561,6 +1561,14 @@ function estimateNodeAreaFromDeclaredSize(node             )         {
   return width * height
 }
 
+// The one sanitizer: parse the markup with the browser's own parser (inert, no scripts run or
+// resources load) and remove active content from the result.
+function sanitizeMarkup(html        )         {
+  const doc = new DOMParser().parseFromString('<!doctype html><body>' + html, 'text/html')
+  sanitizeNodeInPlace(doc.body)
+  return doc.body.innerHTML
+}
+
 // Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside
 // the scheme, so they are removed before the check: "java&#9;script:" is still javascript:.
 function isScriptUrl(value        )          {
@@ -2504,7 +2512,7 @@ function buildFallbackImportResult(
     height: parseCanvasPx(rootStyle.height ?? attrHeight, 'height', warnings) || DEFAULT_CANVAS_HEIGHT,
   }
   const sanitizedRoot = root ? buildSanitizedContentNode(root) : null
-  const content = sanitizedRoot?.innerHTML.trim() || sanitizedRoot?.outerHTML.trim() || (html ? html.trim() : '')
+  const content = sanitizedRoot?.innerHTML.trim() || sanitizedRoot?.outerHTML.trim() || (html ? sanitizeMarkup(html.trim()) : '')
   const label = root ? getNodeLabel(root) : 'html-root'
   const components                   = [{
     id: 'import-001',
@@ -2782,13 +2790,10 @@ function serializeStyle(component                )         {
   return chunks.join(';')
 }
 
+// Imported content is already sanitized. In a browser the export runs it through the shared sanitizer
+// again; without a DOM (the Node tests) the content is written as given.
 function sanitizeContent(content        )         {
-  return content
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
-    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
-    .replace(/\s(href|src)\s*=\s*"javascript:[^"]*"/gi, '')
-    .replace(/\s(href|src)\s*=\s*'javascript:[^']*'/gi, '')
+  return typeof DOMParser === 'undefined' ? content : sanitizeMarkup(content)
 }
 
 function safeCanvasSize(canvas             )                                    {
@@ -3943,6 +3948,7 @@ async function inlineCompanionStylesheets(
     convertSlideDocumentsToPptx,
     createSlideDocument,
     validateImportFile,
+    sanitizeMarkup,
     validateHtmlImportInput,
     validateParsedResult,
     classifyImportError,
@@ -3992,21 +3998,9 @@ async function inlineCompanionStylesheets(
     clearTimeout(toast._t);
     toast._t = setTimeout(() => { t.className = ''; }, warnings && warnings.length ? 9000 : 4000);
   }
-  // Defense-in-depth for the preview render. The engine already rebuilds component
-  // content via DOMParser and renders imports in a sandboxed script-less iframe, so
-  // injected handlers never survive to here; this strips quoted, single-quoted, and
-  // unquoted on*/javascript: forms anyway in case content ever arrives raw.
-  function sanitize(html) {
-    return String(html)
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<script\b[^>]*>/gi, '')
-      .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
-      .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
-      .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
-      .replace(/\s(href|src)\s*=\s*"javascript:[^"]*"/gi, '')
-      .replace(/\s(href|src)\s*=\s*'javascript:[^']*'/gi, '')
-      .replace(/\s(href|src)\s*=\s*javascript:[^\s>]+/gi, '');
-  }
+  // The preview renders component content through the engine's DOM sanitizer, which removes scripts,
+  // event handlers and script URLs.
+  const sanitize = (html) => E.sanitizeMarkup(String(html));
 
   // A component is an image layer if its content is an <img> or it has an image fill.
   function isImageComponent(c) {

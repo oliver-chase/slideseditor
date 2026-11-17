@@ -182,21 +182,9 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => { t.className = ''; }, warnings && warnings.length ? 9000 : 4000);
   }
-  // Defense-in-depth for the preview render. The engine already rebuilds component
-  // content via DOMParser and renders imports in a sandboxed script-less iframe, so
-  // injected handlers never survive to here; this strips quoted, single-quoted, and
-  // unquoted on*/javascript: forms anyway in case content ever arrives raw.
-  function sanitize(html) {
-    return String(html)
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<script\b[^>]*>/gi, '')
-      .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
-      .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
-      .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
-      .replace(/\s(href|src)\s*=\s*"javascript:[^"]*"/gi, '')
-      .replace(/\s(href|src)\s*=\s*'javascript:[^']*'/gi, '')
-      .replace(/\s(href|src)\s*=\s*javascript:[^\s>]+/gi, '');
-  }
+  // The preview renders component content through the engine's DOM sanitizer, which removes scripts,
+  // event handlers and script URLs.
+  const sanitize = (html) => E.sanitizeMarkup(String(html));
 
   // A component is an image layer if its content is an <img> or it has an image fill.
   function isImageComponent(c) {

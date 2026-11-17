@@ -36,6 +36,14 @@ function estimateNodeAreaFromDeclaredSize(node: HTMLElement): number {
   return width * height
 }
 
+// The one sanitizer: parse the markup with the browser's own parser (inert, no scripts run or
+// resources load) and remove active content from the result.
+export function sanitizeMarkup(html: string): string {
+  const doc = new DOMParser().parseFromString('<!doctype html><body>' + html, 'text/html')
+  sanitizeNodeInPlace(doc.body)
+  return doc.body.innerHTML
+}
+
 // Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside
 // the scheme, so they are removed before the check: "java&#9;script:" is still javascript:.
 function isScriptUrl(value: string): boolean {

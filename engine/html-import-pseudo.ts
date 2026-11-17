@@ -5,8 +5,7 @@ import { getCssImportUrl, parseRuleDeclarations, stripWrappingQuotes } from './h
 import { measureNodeRect } from './html-import-render'
 import { extractStyle, parseRuleValueExists } from './html-import-values'
 import { asCanonicalDimension, asCanonicalDimensionOptional, parseStylePositionPx, parseStylePx } from './html-import-position'
-import { escapeAttribute, getNodeLabel } from './html-import-markup'
-import { escapeHtmlText } from './html-import-raster'
+import { escapeAttribute, escapeHtmlText, getNodeLabel } from './html-import-markup'
 
 function parsePseudoLayerDescriptors(styleText: string, root: HTMLElement): PseudoLayerDescriptor[] {
   const descriptors: PseudoLayerDescriptor[] = []

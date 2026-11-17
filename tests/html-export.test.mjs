@@ -21,6 +21,10 @@ assert.ok(!rounded.includes('18.5px'), 'no fractional size reaches the output')
 const escaped = E.convertSlideComponentsToHtml({ canvas: { width: 800, height: 400 }, components: [layer('x', '<img src=x onerror=alert(1)>hi')] })
 assert.ok(!escaped.includes('<img') && escaped.includes('&lt;img'), 'markup is escaped when there is no DOM to sanitize with')
 
+// A background that could end its declaration or style block is replaced by the default.
+const injected = E.convertSlideComponentsToHtml({ canvas: { width: 800, height: 400, background: 'red;}</style><script>x</script>' }, components: [] })
+assert.ok(!injected.includes('<script>') && !injected.includes('red;}'), 'an unsafe background is not written')
+
 // The page starts with a doctype and carries a title.
 assert.ok(hiddenHtml.startsWith('<!doctype html>'), 'the export starts with a doctype')
 

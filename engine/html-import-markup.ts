@@ -18,6 +18,13 @@ export function resolveSvgImageFallback(node: HTMLElement, nodeLabel: string, wa
   return `<img alt="${escapeAttribute(nodeLabel)}" src="data:image/svg+xml;utf8,${encodedMarkup}" />`
 }
 
+export function escapeHtmlText(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
 // Escape a value for a double-quoted HTML attribute.
 export function escapeAttribute(value: string): string {
   return value
@@ -48,8 +55,8 @@ export function sanitizeMarkup(html: string): string {
     if (cleaned === current) return cleaned
     current = cleaned
   }
-  // Output that is still changing after three passes is not trusted.
-  return ''
+  // Output that is still changing after three passes is not trusted, so the input is kept as plain text.
+  return escapeHtmlText(html)
 }
 
 // Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside

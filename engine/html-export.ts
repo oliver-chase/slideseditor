@@ -1,6 +1,5 @@
 import type { SlideCanvas, SlideComponent } from './types'
-import { escapeAttribute, sanitizeMarkup } from './html-import-markup'
-import { escapeHtmlText } from './html-import-raster'
+import { escapeAttribute, escapeHtmlText, sanitizeMarkup } from './html-import-markup'
 
 function serializeStyle(component: SlideComponent): string {
   const chunks: string[] = [
@@ -43,12 +42,15 @@ function safeCanvasSize(canvas: SlideCanvas): { width: number; height: number } 
   }
 }
 
+// A background that could end its declaration or its style block is replaced by the default.
+function safeCanvasBackground(canvas: SlideCanvas): string {
+  const requested = typeof canvas.background === 'string' ? canvas.background.trim() : ''
+  return requested && !/[;{}<>\\@]/.test(requested) ? requested : '#ffffff'
+}
+
 function buildPrintSafeStyles(canvas: SlideCanvas): string {
   const { width: safeWidth, height: safeHeight } = safeCanvasSize(canvas)
-  const safeBackground =
-    typeof canvas.background === 'string' && canvas.background.trim()
-      ? canvas.background.trim().replace(/[<>]/g, '')
-      : '#ffffff'
+  const safeBackground = safeCanvasBackground(canvas)
 
   return [
     '@media print{',
@@ -143,7 +145,7 @@ export function convertSlideComponentsToHtml(input: {
     '<body>',
   ].join('\n')
   const rootOpen =
-    `<div class="slides-export-root"><div class="slide-canvas" data-slide-root="1" data-slides-export-version="1" data-slides-source="${escapeAttribute(source)}" data-slides-slide-id="${escapeAttribute(slideId)}" data-slides-revision="${escapeAttribute(revision)}" data-slides-exported-at="${escapeAttribute(exportedAt)}" style="position:relative;width:${safeCanvasSize(canvas).width}px;height:${safeCanvasSize(canvas).height}px;overflow:hidden;${canvas.background ? `background:${escapeAttribute(canvas.background)};` : ''}">`
+    `<div class="slides-export-root"><div class="slide-canvas" data-slide-root="1" data-slides-export-version="1" data-slides-source="${escapeAttribute(source)}" data-slides-slide-id="${escapeAttribute(slideId)}" data-slides-revision="${escapeAttribute(revision)}" data-slides-exported-at="${escapeAttribute(exportedAt)}" style="position:relative;width:${safeCanvasSize(canvas).width}px;height:${safeCanvasSize(canvas).height}px;overflow:hidden;${canvas.background ? `background:${escapeAttribute(safeCanvasBackground(canvas))};` : ''}">`
   const body = components.filter((component) => component.visible !== false).map(componentToHtml).join('\n')
   const rootClose = '</div></div>'
   const footer = '</body></html>'

@@ -45,7 +45,7 @@ assert.ok(plain.includes('Hello deck'), 'text survives export')
 
 const dirty = await slideXml('Bad\u0001char\u000b\tkept')
 assert.ok(!/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(dirty), 'control characters are stripped')
-assert.ok(dirty.includes('Badchar\tkept'), 'tab is kept')
+assert.ok(dirty.includes('Badchar kept'), 'a source tab renders as a space')
 
 const doubled = await slideXml('&amp;lt;')
 assert.ok(doubled.includes('>&amp;lt;<'), 'escaped text is decoded once')
@@ -164,5 +164,15 @@ assert.ok(Number(slideSize[1]) >= 914400 && Number(slideSize[2]) >= 914400, 'the
 // Named entities and comments in text.
 const named = await slideXml('Fish &amp; chips &copy; 2026 &mdash; ok<!-- hidden note -->')
 assert.ok(named.includes('Fish &amp; chips \u00a9 2026 \u2014 ok') && !named.includes('hidden note'), 'named entities decode and comments are dropped')
+
+// A greater-than sign inside an attribute stays out of the text, and a source newline is a space.
+const attr = await slideXml('<span title="a>b">visible</span> and\nmore')
+assert.ok(attr.includes('visible') && !attr.includes('b&quot;') && !/<a:t>[^<]*b"&gt;/.test(attr), 'a quoted > does not leak into the text')
+assert.equal((attr.match(/<a:p>/g) || []).length, 1, 'a newline in the source does not start a paragraph')
+
+// A hidden component is left out of the PPTX.
+const hiddenComponent = E.createSlideDocument({ canvas: { width: 800, height: 400 }, components: [{ id: 'h', type: 'text', content: 'Secret text', x: 0, y: 0, width: 200, height: 30, locked: false, visible: false, style: {} }, { id: 'v', type: 'text', content: 'Shown text', x: 0, y: 40, width: 200, height: 30, locked: false, visible: true, style: {} }] })
+const hiddenXml = unzip(await E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: hiddenComponent }]).blob.arrayBuffer())['ppt/slides/slide1.xml'].toString('utf8')
+assert.ok(hiddenXml.includes('Shown text') && !hiddenXml.includes('Secret text'), 'a hidden component is not exported')
 
 console.log('pptx-export tests passed')

@@ -4,7 +4,7 @@ import { fetchLimited, parseRuleDeclarations } from './html-import-css'
 import { hasOwnTextNode, isVisibleEl, measureNodeRect, readComputedStyleSafe } from './html-import-render'
 import { extractStyle, hasRenderedBorder } from './html-import-values'
 import { asCanonicalDimension, asCanonicalDimensionOptional } from './html-import-position'
-import { getNodeLabel } from './html-import-markup'
+import { escapeHtmlText, getNodeLabel } from './html-import-markup'
 
 const XHTML_NS = 'http://www.w3.org/1999/xhtml'
 
@@ -391,11 +391,4 @@ export async function buildRasterizedSlide(
   if (gradTextSeq > 0) warnings.push(gradTextSeq + ' gradient-text run(s) could not be rasterized and were kept as plain editable text.')
   warnings.push('Rasterized layers use the fonts available at import; upload/inline the original fonts for exact type.')
   return components
-}
-
-export function escapeHtmlText(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
 }

@@ -1567,6 +1567,13 @@ function resolveSvgImageFallback(node             , nodeLabel        , warnings 
   return `<img alt="${escapeAttribute(nodeLabel)}" src="data:image/svg+xml;utf8,${encodedMarkup}" />`
 }
 
+function escapeHtmlText(text        )         {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
 // Escape a value for a double-quoted HTML attribute.
 function escapeAttribute(value        )         {
   return value
@@ -1597,8 +1604,8 @@ function sanitizeMarkup(html        )         {
     if (cleaned === current) return cleaned
     current = cleaned
   }
-  // Output that is still changing after three passes is not trusted.
-  return ''
+  // Output that is still changing after three passes is not trusted, so the input is kept as plain text.
+  return escapeHtmlText(html)
 }
 
 // Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside
@@ -2469,13 +2476,6 @@ async function buildRasterizedSlide(
   return components
 }
 
-function escapeHtmlText(text        )         {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
 // ===== html-import-nodes.ts =====
 // In absolute mode, split text nested inside a positioned container into its own
 // text-box layers, each with its own font, size and color, so the container does not become one
@@ -2902,12 +2902,15 @@ function safeCanvasSize(canvas             )                                    
   }
 }
 
+// A background that could end its declaration or its style block is replaced by the default.
+function safeCanvasBackground(canvas             )         {
+  const requested = typeof canvas.background === 'string' ? canvas.background.trim() : ''
+  return requested && !/[;{}<>\\@]/.test(requested) ? requested : '#ffffff'
+}
+
 function buildPrintSafeStyles(canvas             )         {
   const { width: safeWidth, height: safeHeight } = safeCanvasSize(canvas)
-  const safeBackground =
-    typeof canvas.background === 'string' && canvas.background.trim()
-      ? canvas.background.trim().replace(/[<>]/g, '')
-      : '#ffffff'
+  const safeBackground = safeCanvasBackground(canvas)
 
   return [
     '@media print{',
@@ -3002,7 +3005,7 @@ function convertSlideComponentsToHtml(input
     '<body>',
   ].join('\n')
   const rootOpen =
-    `<div class="slides-export-root"><div class="slide-canvas" data-slide-root="1" data-slides-export-version="1" data-slides-source="${escapeAttribute(source)}" data-slides-slide-id="${escapeAttribute(slideId)}" data-slides-revision="${escapeAttribute(revision)}" data-slides-exported-at="${escapeAttribute(exportedAt)}" style="position:relative;width:${safeCanvasSize(canvas).width}px;height:${safeCanvasSize(canvas).height}px;overflow:hidden;${canvas.background ? `background:${escapeAttribute(canvas.background)};` : ''}">`
+    `<div class="slides-export-root"><div class="slide-canvas" data-slide-root="1" data-slides-export-version="1" data-slides-source="${escapeAttribute(source)}" data-slides-slide-id="${escapeAttribute(slideId)}" data-slides-revision="${escapeAttribute(revision)}" data-slides-exported-at="${escapeAttribute(exportedAt)}" style="position:relative;width:${safeCanvasSize(canvas).width}px;height:${safeCanvasSize(canvas).height}px;overflow:hidden;${canvas.background ? `background:${escapeAttribute(safeCanvasBackground(canvas))};` : ''}">`
   const body = components.filter((component) => component.visible !== false).map(componentToHtml).join('\n')
   const rootClose = '</div></div>'
   const footer = '</body></html>'
@@ -3090,12 +3093,14 @@ function decodeReferences(text        )         {
 }
 
 function toPlainText(html        )         {
+  // A newline in the source is a space when rendered, so only br and the end of a p or div break a line.
   const withLineBreaks = html
     .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/[ \t\r\n\f]+/g, ' ')
     .replace(/<br\s*\/?>(\s*)/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
-  const noTags = withLineBreaks.replace(/<[^>]*>/g, '')
+  const noTags = withLineBreaks.replace(/<(?:[^>"']|"[^"]*"|'[^']*')*>/g, '')
   return decodeReferences(noTags)
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
@@ -3158,7 +3163,7 @@ function styleOfTag(tag        , attributes        , inherited          )       
 // Split inline HTML into lines of runs that carry bold, italic, underline and color. Line breaks follow
 // toPlainText: a br and the end of a p or div start a new line.
 function toTextLines(rawHtml        )              {
-  const html = rawHtml.replace(/<!--[\s\S]*?-->/g, '')
+  const html = rawHtml.replace(/<!--[\s\S]*?-->/g, '').replace(/[ \t\r\n\f]+/g, ' ')
   const lines              = [[]]
   const stack                                          = []
   let current           = { bold: false, italic: false, underline: false }
@@ -3170,7 +3175,7 @@ function toTextLines(rawHtml        )              {
       if (part) lines[lines.length - 1].push({ text: part, ...current })
     })
   }
-  const tagPattern = /<(\/?)([a-z][a-z0-9]*)([^>]*)>/gi
+  const tagPattern = /<(\/?)([a-z][a-z0-9]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/gi
   let last = 0
   let match                        
   while ((match = tagPattern.exec(html)) !== null) {

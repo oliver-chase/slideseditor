@@ -4,13 +4,11 @@
   "localData": [
     ".github/CODEOWNERS",
     "CLAUDE.md",
-    "engine/pptx-export.ts",
     "tests/pptx-export.test.mjs"
   ],
   "localDataReasons": {
     ".github/CODEOWNERS": "GitHub requires the repository owner's handle in the code-owners file.",
     "CLAUDE.md": "Names the GitHub account and Project the backlog lives in.",
-    "engine/pptx-export.ts": "Oliver is the name of the exported theme, which the PowerPoint importer matches.",
     "tests/pptx-export.test.mjs": "The test searches every export for the maker's name, so it must hold that name."
   }
 }

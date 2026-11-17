@@ -29,7 +29,8 @@ slideseditor/
 │   │                        shapes and text, package parts, and the entry point (pptx-export.ts)
 │   └── import-file-bundle.ts File/stylesheet selection and inlining
 ├── scripts/
-│   └── build-bundle.mjs     Zero-dep bundler (strip types, flatten, inline)
+│   ├── build-bundle.mjs     Zero-dep bundler (strip types, flatten, inline)
+│   └── validate.sh          The repo's validation: the commit gates, the structure check and every test
 ├── tests/                   Node tests that bundle the engine from source
 │   ├── load-engine.mjs      Shared loader
 │   ├── pptx-export.test.mjs PPTX parts, spacing, borders, captions, neutral names
@@ -44,7 +45,7 @@ slideseditor/
 `scripts/build-bundle.mjs`:
 
 1. Reads the `engine/*.ts` files named in `ENGINE_FILES` in dependency order.
-2. Strips TypeScript types with node's built-in `stripTypeScriptTypes` (node >= 22.13) and drops every ES `import`/`export` line — all cross-module dependencies resolve in one flat scope.
+2. Strips TypeScript types with node's built-in `stripTypeScriptTypes` (node >= 22.13) drops every ES `import` line and strips the `export` keyword — all cross-module dependencies resolve in one flat scope.
 3. Concatenates them into a single IIFE that exposes the public API on `window.SlideEngine`.
 4. Injects that bundle into `src/shell.html` at the `/* __SLIDE_ENGINE_BUNDLE__ */` marker (escaping any literal `</script>` in engine strings) and writes `slideeditor.html`.
 

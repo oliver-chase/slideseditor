@@ -5,3 +5,6 @@
 # Local env / secrets (never commit)
 .env
 .env.local
+
+# Local scratch work (comparison pages, backups)
+scratch/

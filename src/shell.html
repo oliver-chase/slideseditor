@@ -99,6 +99,7 @@
     aside { flex: 1 1 40%; border-left: 0; border-top: 1px solid var(--line); min-height: 0; }
     #empty { max-width: 90%; font-size: 13px; padding: 0 8px; }
     .modal-actions { flex-wrap: wrap; }
+    .btn, .seg button, .layer { min-height: 44px; }
   }
   .warnlist { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; max-height: 120px; overflow-y: auto; }
 </style>
@@ -149,7 +150,7 @@
   'use strict';
   const E = window.SlideEngine;
   const PRESETS = { '16-9': { width: 1920, height: 1080 }, '1-1': { width: 1080, height: 1080 } };
-  const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+  const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg)$/i;
   // 'native' keeps the source's own dimensions so designs never distort; the fixed
   // presets are opt-in reshapes.
   function presetDims() {
@@ -279,7 +280,7 @@
     const rows = state.components.map((c, i) => {
       const kind = kinds[i];
       const name = escapeHtml(c.sourceLabel || c.type || 'layer');
-      const dim = Math.round(c.width) + '×' + Math.round(c.height || 0);
+      const dim = Math.round(c.width) + '×' + Math.round(typeof c.height === 'number' ? c.height : 40);
       return '<li><button type="button" class="layer' + (c.id === state.highlightId ? ' active' : '') + '" aria-pressed="' + (c.id === state.highlightId) + '" data-id="' + escapeHtml(c.id) + '">' +
         '<span class="tag ' + kind + '">' + TAG_LABEL[kind] + '</span>' +
         '<span class="name">' + name + '</span><span class="dim">' + dim + '</span></button></li>';
@@ -351,12 +352,25 @@
     });
   }
   const MAX_IMAGE_BYTES = 50 * 1000 * 1000; // same 50 MB limit the HTML path enforces
+  // PowerPoint cannot embed an SVG file, so it is drawn onto a canvas and imported as a PNG picture.
+  async function svgFileToPng(file) {
+    const svgUrl = await readAsDataUrl(file);
+    const nat = await naturalSize(svgUrl);
+    const w = nat.w || 1920, h = nat.h || 1080;
+    const img = new Image();
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error('The SVG could not be drawn.')); img.src = svgUrl; });
+    const canvas = document.createElement('canvas');
+    canvas.width = w * 2; canvas.height = h * 2;
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/png');
+  }
   async function importImageFile(file) {
     if (file.size > MAX_IMAGE_BYTES) {
       toast('Import failed: the image is too large. Maximum supported size is ' + (MAX_IMAGE_BYTES / 1000000) + ' MB.');
       return;
     }
-    const dataUrl = await readAsDataUrl(file);
+    const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+    const dataUrl = isSvg ? await svgFileToPng(file) : await readAsDataUrl(file);
     const nat = await naturalSize(dataUrl);
     // A raster defines its own size; import at native (fixed presets remain opt-in).
     state.sourceCanvas = { width: nat.w || 1920, height: nat.h || 1080 };
@@ -378,6 +392,13 @@
   }
 
   async function importFiles(fileList) {
+    try {
+      await importFilesUnchecked(fileList);
+    } catch (err) {
+      toast('Import failed: ' + (err && err.message ? err.message : 'the file could not be read.'));
+    }
+  }
+  async function importFilesUnchecked(fileList) {
     const files = Array.from(fileList);
     const imageFile = files.find((f) => IMAGE_EXT.test(f.name) || /^image\//.test(f.type));
     const htmlFile = files.find((f) => /\.(html?|htm)$/i.test(f.name) || /text\/html/.test(f.type));
@@ -390,11 +411,11 @@
       return;
     }
     if (imageFile) { await importImageFile(imageFile); return; }
-    toast('Choose an .html file or a PNG/JPG image.');
+    toast('Choose an .html file or a PNG, JPG, GIF, WebP or SVG image.');
   }
 
   // ---- Preset ----
-  function applyPreset(preset, silent) {
+  function applyPreset(preset) {
     const p = preset === 'native' ? state.sourceCanvas : PRESETS[preset];
     if (!p) return;
     const prev = state.canvas;
@@ -405,7 +426,7 @@
         components: state.components,
       });
       state.components = adapted.components;
-      if (!silent && adapted.warnings && adapted.warnings.length) toast('Resized to ' + preset, adapted.warnings);
+      if (adapted.warnings && adapted.warnings.length) toast('Resized to ' + preset, adapted.warnings);
     }
     state.preset = preset;
     state.canvas = { width: p.width, height: p.height, background: prev.background };

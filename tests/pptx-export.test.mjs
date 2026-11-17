@@ -95,7 +95,7 @@ const parts = await exportParts('Hello')
 for (const [name, data] of Object.entries(parts)) {
   assert.ok(!/oliver/i.test(data.toString('latin1')), name + ' carries no owner name')
 }
-const neutralHtml = E.convertSlideComponentsToHtml({ canvas: { width: 800, height: 400 }, components: [] })
+const neutralHtml = E.convertSlideComponentsToHtml({ canvas: { width: 800, height: 400 }, components: [{ id: 'n', type: 'text', content: '<img src="data:image/png;base64,AAAA">Caption', x: 0, y: 0, width: 200, height: 30, style: {}, locked: false, visible: true }] })
 assert.ok(!/oliver/i.test(neutralHtml), 'the HTML export carries no owner name')
 
 // A picture with no height keeps its own aspect ratio: a 4 by 2 image 400 wide is 200 high.

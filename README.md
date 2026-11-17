@@ -14,7 +14,7 @@ It is built for anyone who designs slides in HTML and needs the result as a nati
 
 Open `slideeditor.html` in any modern browser.
 
-Opening the file needs no installation, no server and no build step. Conversion runs in the browser on your computer, and nothing is uploaded. The one network request is a fetch of a remote stylesheet when the imported HTML links to one that is not supplied as a file. Pasting self-contained HTML or choosing the `.css` file keeps the conversion fully offline.
+Opening the file needs no installation, no server and no build step. Conversion runs in the browser on your computer, and nothing is uploaded. The browser requests anything the imported slide names at a web address: a linked stylesheet, an `@import` file, an image or a font. Pasting self-contained HTML, with its stylesheet and images embedded or supplied as files, keeps the conversion fully offline.
 
 Import a slide in any of three ways:
 
@@ -83,6 +83,8 @@ Then run the tests, which need only Node and bundle the engine from source:
 for t in tests/*.test.mjs; do node "$t"; done
 ```
 
+`bash scripts/validate.sh` runs the commit gates and the same tests.
+
 ## What it supports
 
 * HTML input — converted into editable PowerPoint text boxes, images, and shapes
@@ -101,7 +103,6 @@ There is deliberately no on-page drag, resize, or inline editing. The browser co
 
 Open work and deferred features are tracked in the `slideseditor` GitHub Project (see `CLAUDE.md`), including:
 
-* SVG input
 * Multi-slide conversion
 
 ## Repo layout
@@ -113,6 +114,7 @@ slideeditor.html          The deliverable — open this in a browser
 src/shell.html            Converter UI source
 engine/                   Pure-TypeScript conversion engine
 scripts/build-bundle.mjs  Zero-dependency bundler
+scripts/validate.sh       Runs the commit gates and every test
 tests/                    Node tests that bundle the engine from source
 ARCHITECTURE.md           How the pieces fit
 ```

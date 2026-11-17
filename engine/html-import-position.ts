@@ -346,8 +346,12 @@ export function resolveNodePosition(
     renderNode.parentElement !== renderRoot &&
     renderRoot.contains(renderNode.parentElement),
   )
-  const preferredMeasuredX = hasNestedRenderParent ? measuredOrLayoutX : undefined
-  const preferredMeasuredY = hasNestedRenderParent ? measuredOrLayoutY : undefined
+  // An element in normal flow sits where layout put it, and its margin is not a position. Only a
+  // positioned element at the top level takes its declared left and top first.
+  const isPositioned = /^(absolute|fixed)$/i.test(computedStyle?.position || '')
+  const preferMeasured = hasNestedRenderParent || !isPositioned
+  const preferredMeasuredX = preferMeasured ? measuredOrLayoutX : undefined
+  const preferredMeasuredY = preferMeasured ? measuredOrLayoutY : undefined
   const baseX = preferredMeasuredX ?? explicitLeft ?? explicitMarginLeft ?? computedLeft ?? computedMarginLeft ?? measuredOrLayoutX ?? 0
   const baseY = preferredMeasuredY ?? explicitTop ?? explicitMarginTop ?? computedTop ?? computedMarginTop ?? measuredOrLayoutY ?? 0
   const baseXUsesMeasuredRect = preferredMeasuredX !== undefined || (

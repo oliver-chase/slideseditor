@@ -199,9 +199,12 @@ export function extractPseudoLayers(
   renderSnapshot: RenderSnapshot,
   root: HTMLElement,
   warnings: string[],
+  builtHostIds: Set<string>,
 ): Map<string, SlideComponent[]> {
   const pseudoDescriptors = parsePseudoLayerDescriptors(styleSources, root)
-  const pseudoByHost = extractPseudoComponents(pseudoDescriptors, renderSnapshot, root, renderSnapshot.root || root, warnings)
+  const allByHost = extractPseudoComponents(pseudoDescriptors, renderSnapshot, root, renderSnapshot.root || root, warnings)
+  // A layer is emitted only with its host, so layers of hosts that are not imported are left out and not counted.
+  const pseudoByHost = new Map(Array.from(allByHost).filter(([hostId]) => builtHostIds.has(hostId)))
   const pseudoLayerCount = Array.from(pseudoByHost.values()).reduce((total, entries) => total + entries.length, 0)
   if (pseudoDescriptors.length > 0 && pseudoLayerCount === 0) {
     warnings.push('Pseudo-element selectors were detected but could not be resolved to rendered layers.')

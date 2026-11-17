@@ -1,5 +1,6 @@
 import type { SlideCanvas, SlideComponent } from './types'
 import { escapeAttribute, sanitizeMarkup } from './html-import-markup'
+import { escapeHtmlText } from './html-import-raster'
 
 function serializeStyle(component: SlideComponent): string {
   const chunks: string[] = [
@@ -30,9 +31,9 @@ function serializeStyle(component: SlideComponent): string {
 }
 
 // Imported content is already sanitized. In a browser the export runs it through the shared sanitizer
-// again; without a DOM (the Node tests) the content is written as given.
+// again. Without a DOM (the Node tests) nothing can be parsed, so the content is written as escaped text.
 function sanitizeContent(content: string): string {
-  return typeof DOMParser === 'undefined' ? content : sanitizeMarkup(content)
+  return typeof DOMParser === 'undefined' ? escapeHtmlText(content) : sanitizeMarkup(content)
 }
 
 function safeCanvasSize(canvas: SlideCanvas): { width: number; height: number } {
@@ -47,7 +48,7 @@ function buildPrintSafeStyles(canvas: SlideCanvas): string {
   const safeBackground =
     typeof canvas.background === 'string' && canvas.background.trim()
       ? canvas.background.trim().replace(/[<>]/g, '')
-      : 'var(--color-bg-card)'
+      : '#ffffff'
 
   return [
     '@media print{',

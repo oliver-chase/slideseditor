@@ -18,7 +18,9 @@ function parseStylesheetHref(styleSheet: HTMLLinkElement, baseUrl: string): stri
   return resolved
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 1500): Promise<string | null> {
+// Fetch a web address with a timeout and a byte limit. The declared length is checked first, then the body
+// is read in pieces and dropped as soon as it passes the limit, so an oversized response is never held whole.
+export async function fetchLimited(url: string, maxBytes: number, timeoutMs: number): Promise<{ bytes: Uint8Array; type: string } | null> {
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => {
     controller.abort()
@@ -36,14 +38,38 @@ async function fetchWithTimeout(url: string, timeoutMs = 1500): Promise<string |
 
     if (!response.ok) return null
     const declaredLength = Number.parseInt(response.headers.get('content-length') || '', 10)
-    if (Number.isFinite(declaredLength) && declaredLength > REMOTE_STYLESHEET_MAX_BYTES) return null
-    const text = await response.text()
-    return text.length > REMOTE_STYLESHEET_MAX_BYTES ? null : text
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return null
+    const pieces: Uint8Array[] = []
+    let total = 0
+    if (response.body) {
+      const reader = response.body.getReader()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        total += value.byteLength
+        if (total > maxBytes) { controller.abort(); return null }
+        pieces.push(value)
+      }
+    } else {
+      const whole = new Uint8Array(await response.arrayBuffer())
+      if (whole.byteLength > maxBytes) return null
+      pieces.push(whole)
+      total = whole.byteLength
+    }
+    const bytes = new Uint8Array(total)
+    let offset = 0
+    for (const piece of pieces) { bytes.set(piece, offset); offset += piece.byteLength }
+    return { bytes, type: response.headers.get('content-type') || '' }
   } catch {
     return null
   } finally {
     window.clearTimeout(timeoutId)
   }
+}
+
+async function fetchWithTimeout(url: string, timeoutMs = 1500): Promise<string | null> {
+  const result = await fetchLimited(url, REMOTE_STYLESHEET_MAX_BYTES, timeoutMs)
+  return result ? new TextDecoder().decode(result.bytes) : null
 }
 
 function stripCssComments(cssText: string): string {

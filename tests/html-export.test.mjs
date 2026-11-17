@@ -17,6 +17,10 @@ const rounded = E.convertSlideComponentsToHtml({ canvas: { width: 1920, height: 
 assert.ok(rounded.includes('width:1920px;height:19px;'), 'a fractional canvas height is rounded')
 assert.ok(!rounded.includes('18.5px'), 'no fractional size reaches the output')
 
+// Without a DOM, content is written as escaped text and never as markup.
+const escaped = E.convertSlideComponentsToHtml({ canvas: { width: 800, height: 400 }, components: [layer('x', '<img src=x onerror=alert(1)>hi')] })
+assert.ok(!escaped.includes('<img') && escaped.includes('&lt;img'), 'markup is escaped when there is no DOM to sanitize with')
+
 // The page starts with a doctype and carries a title.
 assert.ok(hiddenHtml.startsWith('<!doctype html>'), 'the export starts with a doctype')
 

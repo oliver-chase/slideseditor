@@ -48,7 +48,8 @@ export function sanitizeMarkup(html: string): string {
     if (cleaned === current) return cleaned
     current = cleaned
   }
-  return current
+  // Output that is still changing after three passes is not trusted.
+  return ''
 }
 
 // Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside

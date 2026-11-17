@@ -145,7 +145,7 @@ const webpExt = webpXml.match(/<p:pic>[\s\S]*?<a:ext cx="(\d+)" cy="(\d+)"/)
 assert.equal(Number(webpExt[1]) / Number(webpExt[2]), 2, 'a WebP with no height keeps its 2:1 aspect')
 const remote = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [{ id: 'r', type: 'text', content: '<img src="https://example.test/a.png">Caption', x: 0, y: 0, width: 200, height: 30, locked: false, visible: true, style: {} }] })
 const remoteResult = E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: remote }])
-assert.ok(remoteResult.warnings.some((w) => w.includes('r') && w.includes('not embedded')), 'an image that is not embedded is reported')
+assert.ok(remoteResult.warnings.some((w) => w.startsWith('slide 1 (t): component r (text) references an image that is not embedded')), 'an image that is not embedded is reported')
 
 // Inline bold, italic, underline and color become runs of their own.
 const runsXml = await slideXml('Plain <strong>bold</strong> and <span style="color:#ff0000;font-style:italic">red italic</span><br>Next <u>line</u> <font color="blue">blue</font>')
@@ -154,5 +154,15 @@ assert.ok(/<a:rPr[^>]* i="1"[^>]*><a:solidFill><a:srgbClr val="FF0000"\/>(?:(?!<
 assert.ok(/<a:rPr[^>]* u="sng"[^>]*>(?:(?!<\/a:r>)[\s\S])*?<a:t>line<\/a:t>/.test(runsXml), 'an underline run is underlined')
 assert.equal((runsXml.match(/<a:p>/g) || []).length, 2, 'a br starts a second paragraph')
 assert.ok(/<a:t>Plain <\/a:t>/.test(runsXml), 'plain text keeps its trailing space')
+
+// A tiny canvas still gives a slide of at least one inch on each side.
+const tiny = E.createSlideDocument({ canvas: { width: 20, height: 10 }, components: [] })
+const tinyParts = unzip(await E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: tiny }]).blob.arrayBuffer())
+const slideSize = tinyParts['ppt/presentation.xml'].toString('utf8').match(/<p:sldSz cx="(\d+)" cy="(\d+)"/)
+assert.ok(Number(slideSize[1]) >= 914400 && Number(slideSize[2]) >= 914400, 'the slide is at least 914400 EMU on each side')
+
+// Named entities and comments in text.
+const named = await slideXml('Fish &amp; chips &copy; 2026 &mdash; ok<!-- hidden note -->')
+assert.ok(named.includes('Fish &amp; chips \u00a9 2026 \u2014 ok') && !named.includes('hidden note'), 'named entities decode and comments are dropped')
 
 console.log('pptx-export tests passed')

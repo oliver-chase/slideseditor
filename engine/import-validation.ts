@@ -13,9 +13,7 @@ export function isHtmlImportFile(file: File): boolean {
 }
 
 export function validateImportFile(file: File): SlideImportFailure | null {
-  const name = file.name.toLowerCase()
-  const type = file.type.toLowerCase()
-  const looksHtml = name.endsWith('.html') || name.endsWith('.htm') || type.includes('text/html')
+  const looksHtml = isHtmlImportFile(file)
 
   if (!looksHtml) {
     return {

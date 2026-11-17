@@ -1,6 +1,6 @@
 import type { SlideComponent } from './types'
 import type { RasterCandidates, RenderSnapshot } from './html-import-shared'
-import { parseRuleDeclarations } from './html-import-css'
+import { fetchLimited, parseRuleDeclarations } from './html-import-css'
 import { hasOwnTextNode, isVisibleEl, measureNodeRect, readComputedStyleSafe } from './html-import-render'
 import { extractStyle, hasRenderedBorder } from './html-import-values'
 import { asCanonicalDimension, asCanonicalDimensionOptional } from './html-import-position'
@@ -137,28 +137,29 @@ async function rasterizeElementInline(el: HTMLElement, win: Window, scale: numbe
   return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)
 }
 
-// Render the whole slide in context (keeps the page <style>, so boxes/meters/gradients
-// lay out exactly as designed) with every text glyph stripped, producing the flat art
-// layer. Returns a full-canvas PNG data URI, or null if the render fails.
 // The artwork is drawn through an SVG image, which cannot load web addresses. Images and fonts that the
 // slide names at a web address are fetched first and embedded as data URIs, up to a size limit each.
 const REMOTE_ASSET_MAX_BYTES = 5_000_000
+const REMOTE_ASSET_TIMEOUT_MS = 4000
 
-async function fetchAsDataUrl(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, { mode: 'cors', credentials: 'omit' })
-    if (!response.ok) return null
-    const blob = await response.blob()
-    if (blob.size > REMOTE_ASSET_MAX_BYTES) return null
+// Each address is fetched once per import, with its own timeout and the byte limit.
+const remoteAssetCache = new Map<string, Promise<string | null>>()
+
+function fetchAsDataUrl(url: string): Promise<string | null> {
+  const cached = remoteAssetCache.get(url)
+  if (cached) return cached
+  const pending = (async (): Promise<string | null> => {
+    const result = await fetchLimited(url, REMOTE_ASSET_MAX_BYTES, REMOTE_ASSET_TIMEOUT_MS)
+    if (!result) return null
     return await new Promise<string | null>((resolve) => {
       const reader = new FileReader()
       reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
       reader.onerror = () => resolve(null)
-      reader.readAsDataURL(blob)
+      reader.readAsDataURL(new Blob([result.bytes], { type: result.type }))
     })
-  } catch {
-    return null
-  }
+  })()
+  remoteAssetCache.set(url, pending)
+  return pending
 }
 
 async function inlineRemoteImages(root: HTMLElement): Promise<void> {
@@ -183,6 +184,9 @@ async function inlineRemoteFonts(cssText: string): Promise<string> {
   return result
 }
 
+// Render the whole slide in context (keeps the page <style>, so boxes/meters/gradients
+// lay out exactly as designed) with every text glyph stripped, producing the flat art
+// layer. Returns a full-canvas PNG data URI, or null if the render fails.
 async function rasterizeArtLayer(
   renderRoot: HTMLElement,
   win: Window,
@@ -190,6 +194,7 @@ async function rasterizeArtLayer(
   h: number,
   scale: number,
 ): Promise<string | null> {
+  remoteAssetCache.clear()
   const sdoc = renderRoot.ownerDocument
   if (!sdoc) return null
   const clone = renderRoot.cloneNode(true) as HTMLElement

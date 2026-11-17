@@ -21,6 +21,9 @@ export const EMU_PER_PX = 9525
 // PowerPoint's hard ceiling is 56in per axis (51,206,400 EMU).
 const MAX_SLIDE_AXIS_EMU = 51_206_400
 
+// PowerPoint's smallest slide side is 1in (914,400 EMU).
+const MIN_SLIDE_AXIS_EMU = 914_400
+
 export interface SlideEmu {
   w: number
   h: number
@@ -28,12 +31,13 @@ export interface SlideEmu {
 }
 
 // Map the canvas to the slide at true 96dpi (1px = 9525 EMU), shrinking the scale
-// uniformly only if a huge canvas would exceed PowerPoint's 56in axis limit. The
-// aspect ratio is always preserved exactly.
+// uniformly only if a huge canvas would exceed PowerPoint's 56in axis limit, and growing it
+// if the short side would fall under PowerPoint's 1in minimum. The aspect ratio is always preserved.
 export function computeSlideEmu(canvasWidth: number, canvasHeight: number): SlideEmu {
   const w = Math.max(1, canvasWidth || 1920)
   const h = Math.max(1, canvasHeight || 1080)
-  const emuPerPx = Math.min(EMU_PER_PX, MAX_SLIDE_AXIS_EMU / Math.max(w, h))
+  const fitted = Math.min(EMU_PER_PX, MAX_SLIDE_AXIS_EMU / Math.max(w, h))
+  const emuPerPx = Math.max(fitted, MIN_SLIDE_AXIS_EMU / Math.min(w, h))
   return { w: Math.round(w * emuPerPx), h: Math.round(h * emuPerPx), emuPerPx }
 }
 
@@ -53,7 +57,14 @@ function codePointText(codePoint: number): string {
 }
 
 // One pass over the references, so "&#38;amp;" decodes once to "&amp;" and not twice to "&".
-const NAMED_REFERENCES: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' }
+const NAMED_REFERENCES: Record<string, string> = {
+  nbsp: '\u00a0', lt: '<', gt: '>', quot: '"', apos: "'", amp: '&',
+  copy: '\u00a9', reg: '\u00ae', trade: '\u2122', deg: '\u00b0', times: '\u00d7', middot: '\u00b7',
+  ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', bull: '\u2022',
+  lsquo: '\u2018', rsquo: '\u2019', ldquo: '\u201c', rdquo: '\u201d',
+  laquo: '\u00ab', raquo: '\u00bb', euro: '\u20ac', pound: '\u00a3', yen: '\u00a5', cent: '\u00a2',
+  larr: '\u2190', rarr: '\u2192', uarr: '\u2191', darr: '\u2193',
+}
 
 function decodeReferences(text: string): string {
   return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, ref: string) => {
@@ -67,6 +78,7 @@ function decodeReferences(text: string): string {
 
 export function toPlainText(html: string): string {
   const withLineBreaks = html
+    .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<br\s*\/?>(\s*)/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
@@ -105,6 +117,9 @@ interface RunStyle {
   color?: string
 }
 
+// Elements with no closing tag. They carry no text, so they never change the style of what follows.
+const VOID_TAGS = new Set(['img', 'input', 'hr', 'wbr', 'area', 'base', 'col', 'embed', 'link', 'meta', 'source', 'track'])
+
 function styleOfTag(tag: string, attributes: string, inherited: RunStyle): RunStyle {
   const next = { ...inherited }
   if (tag === 'b' || tag === 'strong') next.bold = true
@@ -112,7 +127,7 @@ function styleOfTag(tag: string, attributes: string, inherited: RunStyle): RunSt
   if (tag === 'u') next.underline = true
   const colorAttr = attributes.match(/\bcolor\s*=\s*["']([^"']+)["']/i)
   if (tag === 'font' && colorAttr) next.color = colorAttr[1]
-  const style = attributes.match(/\bstyle\s*=\s*"([^"]*)"|\bstyle\s*=\s*'([^']*)'/i)
+  const style = attributes.match(/(?:^|\s)style\s*=\s*"([^"]*)"|(?:^|\s)style\s*=\s*'([^']*)'/i)
   const declarations = style ? (style[1] ?? style[2]) : ''
   for (const declaration of declarations.split(';')) {
     const colon = declaration.indexOf(':')
@@ -129,7 +144,8 @@ function styleOfTag(tag: string, attributes: string, inherited: RunStyle): RunSt
 
 // Split inline HTML into lines of runs that carry bold, italic, underline and color. Line breaks follow
 // toPlainText: a br and the end of a p or div start a new line.
-export function toTextLines(html: string): TextRun[][] {
+export function toTextLines(rawHtml: string): TextRun[][] {
+  const html = rawHtml.replace(/<!--[\s\S]*?-->/g, '')
   const lines: TextRun[][] = [[]]
   const stack: Array<{ tag: string; style: RunStyle }> = []
   let current: RunStyle = { bold: false, italic: false, underline: false }
@@ -145,7 +161,7 @@ export function toTextLines(html: string): TextRun[][] {
   let last = 0
   let match: RegExpExecArray | null
   while ((match = tagPattern.exec(html)) !== null) {
-    pushText(html.slice(last, match.index).replace(/\n/g, '\n'))
+    pushText(html.slice(last, match.index))
     last = match.index + match[0].length
     const closing = match[1] === '/'
     const tag = match[2].toLowerCase()
@@ -159,7 +175,7 @@ export function toTextLines(html: string): TextRun[][] {
       if (tag === 'p' || tag === 'div') lines.push([])
       continue
     }
-    if (/\/\s*$/.test(match[3])) continue
+    if (/\/\s*$/.test(match[3]) || VOID_TAGS.has(tag)) continue
     current = styleOfTag(tag, match[3], current)
     stack.push({ tag, style: current })
   }

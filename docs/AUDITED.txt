@@ -24,7 +24,7 @@ e62100938cefa0f3675304acf6a7aaf942aefd74 engine/html-import-markup.ts
 a191de74f7f6f209d047bf01c1ac4481523185d5 engine/html-import-nodes.ts
 447a9ae2a51ceb76bb80f2def8ee774c0ec2b558 engine/html-import-position.ts
 c5d156723723ab99e6f613796958da17a6007831 engine/html-import-pseudo.ts
-677e0d1f88f743426628db9b793d6b9291c26990 engine/html-import-raster.ts
+5f84e7907165fa74b850e10ce2aa63cf64189b88 engine/html-import-raster.ts
 ca20fd1e74ae439fc439976a7e175ee6e86a2906 engine/html-import-render.ts
 62be4f34f0f32822f7c6558847ebfb9a0a4fb130 engine/html-import-shared.ts
 176b0b06e695d6dbbe9895d625a966aab7b59f61 engine/html-import-values.ts
@@ -45,7 +45,7 @@ b29c9675cc5864fd65d6a3b0f8d9a21f41748db2 engine/types.ts
 3e4d383ff5c481fade5874259f4823e54f03fc0e scripts/duplication_check.py
 5154609e34d8167261eb426eb4dae346017a7e8d scripts/size.sh
 5ab90ddd2657e5f2d9db934d68951cccfdeeed8b scripts/validate.sh
-707a7e72ad1feb2832a30899de92cb4d9acfb9e8 slideeditor.html
+b0130216f1a5916fc5779478743df85203e6da16 slideeditor.html
 fd69994ac240951f240b289be7a542e7711f9b53 src/shell.html
 ad57ab7f4cfc56d64d6cf908438b7939da448e77 tests/bundle-fresh.test.mjs
 66fb5fb84b9556e9666716ee2c60de340e2d1b48 tests/html-export.test.mjs

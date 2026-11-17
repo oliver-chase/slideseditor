@@ -16,7 +16,7 @@ function resolveFontFamily(rawFamily: string, warnings: string[], nodeLabel: str
     .some((family) => ['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy'].includes(family))
   if (hasGeneric) return rawFamily
 
-  const fallback = /\b(serif|arial|times|georgia|garamond|didot|cambria|cochin|palatino|lucida)\b/i.test(rawFamily)
+  const fallback = /\b(serif|times|georgia|garamond|didot|cambria|cochin|palatino)\b/i.test(rawFamily)
     ? 'serif'
     : 'sans-serif'
   const sanitized = rawFamily.trim() ? `${rawFamily}, ${fallback}` : fallback

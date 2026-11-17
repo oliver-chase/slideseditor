@@ -39,9 +39,16 @@ function estimateNodeAreaFromDeclaredSize(node: HTMLElement): number {
 // The one sanitizer: parse the markup with the browser's own parser (inert, no scripts run or
 // resources load) and remove active content from the result.
 export function sanitizeMarkup(html: string): string {
-  const doc = new DOMParser().parseFromString('<!doctype html><body>' + html, 'text/html')
-  sanitizeNodeInPlace(doc.body)
-  return doc.body.innerHTML
+  let current = html
+  // Serializing and parsing again can expose markup that the first parse kept as text, so repeat until the output stops changing.
+  for (let pass = 0; pass < 3; pass += 1) {
+    const doc = new DOMParser().parseFromString('<!doctype html><body>' + current, 'text/html')
+    sanitizeNodeInPlace(doc.body)
+    const cleaned = doc.body.innerHTML
+    if (cleaned === current) return cleaned
+    current = cleaned
+  }
+  return current
 }
 
 // Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside
@@ -53,9 +60,9 @@ function isScriptUrl(value: string): boolean {
 
 const URL_ATTRIBUTES = new Set(['href', 'src', 'xlink:href', 'formaction', 'action', 'poster', 'background'])
 
-export function sanitizeNodeInPlace(root: HTMLElement): void {
+function sanitizeNodeInPlace(root: HTMLElement): void {
   // animate and set can rewrite an href to a script URL after the page loads.
-  root.querySelectorAll('script,style,iframe,object,embed,link,meta,base,animate,set').forEach(el => el.remove())
+  root.querySelectorAll('script,style,iframe,object,embed,link,meta,base,animate,set,noscript,noembed,noframes,xmp,plaintext,template').forEach(el => el.remove())
 
   const allNodes = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))]
   for (const element of allNodes) {
@@ -143,12 +150,10 @@ export function getCanvasRoot(doc: Document): HTMLElement | null {
     if (best?.candidate) return best.candidate
   }
 
-  // Only a div/section/article/main explicitly marked as a slide/deck/canvas/frame/artboard
-  // may stand in for the real page root — an unmarked sized box (a card, a tag, a tile) is
-  // slide CONTENT, never the slide itself. Without this guard, any inner element with an
-  // explicit width+height whose aspect ratio happens to sit near 16:9 could outscore the
-  // real page canvas on ratio alone and get treated as the whole slide, silently clipping
-  // everything outside it — reproduced with a real deck body containing multiple sized cards.
+  // Only a div, section, article or main marked as a slide, deck, canvas, frame or artboard
+  // may stand in for the page root. An unmarked sized box (a card, a tag, a tile) is slide
+  // content. An inner element with a declared width and height near 16:9 would otherwise
+  // outscore the real page canvas on ratio and clip everything outside it.
   const scoredCandidates = Array.from(doc.body.querySelectorAll<HTMLElement>('div,section,article,main'))
     .map((candidate) => {
       const styleMap = parseRuleDeclarations(candidate.getAttribute('style') || '')
@@ -312,12 +317,3 @@ export function collectNestedTextLeaves(
   }
   return leaves
 }
-
-// ---- Rasterization pipeline for designed graphics --------------------------------
-// Designed graphics (gradient bursts, gradient-clipped text, stacked cards/meters)
-// cannot be reproduced faithfully as native PPTX shapes/text — they overlap and break.
-// For a visually-rich slide we instead: (1) flatten ALL non-text visuals (background,
-// boxes, lines, meters, images) into ONE picture layer; (2) rasterize each gradient
-// text run to its own picture layer (native PPTX has no gradient-clipped text); and
-// (3) keep every plain-text run as an editable text box on top. Simple text-on-solid
-// slides skip this entirely and use the native path.

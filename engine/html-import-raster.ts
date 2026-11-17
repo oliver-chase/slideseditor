@@ -44,32 +44,39 @@ async function drawSvgToPng(svgUrl: string, w: number, h: number, scale: number)
 
 // PowerPoint cannot embed a plain SVG, so turn each SVG image into a PNG at the component's size.
 export async function rasterizeSvgComponents(components: SlideComponent[], warnings: string[]): Promise<void> {
-  const svgImg = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"(data:image\/svg\+xml[^"]*)"|'(data:image\/svg\+xml[^']*)')/i
+  const svgImg = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"(data:image\/svg\+xml[^"]*)"|'(data:image\/svg\+xml[^']*)')/gi
   for (const component of components) {
-    const match = (component.content || '').match(svgImg)
-    if (!match) continue
+    const content = component.content || ''
+    const matches = Array.from(content.matchAll(svgImg))
+    if (matches.length === 0) continue
     const w = Math.max(1, Math.round(component.width || 0))
     const h = Math.max(1, Math.round(component.height || component.width || 0))
-    const unescaped = (match[2] ?? match[3]).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-    const comma = unescaped.indexOf(',')
-    let markup = unescaped.slice(comma + 1)
-    try { markup = decodeURIComponent(markup) } catch { /* already plain text */ }
-    const img = await loadImageFromUrl('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup))
-    const canvas = document.createElement('canvas')
-    const scale = 2
-    canvas.width = w * scale
-    canvas.height = h * scale
-    const ctx = canvas.getContext('2d')
-    let png: string | null = null
-    if (img && ctx) {
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-      try { png = canvas.toDataURL('image/png') } catch { png = null }
+    // Convert every SVG image of the component, in order, and keep the original for any that fails.
+    const pngs: Array<string | null> = []
+    for (const match of matches) {
+      const unescaped = (match[2] ?? match[3]).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+      let markup = unescaped.slice(unescaped.indexOf(',') + 1)
+      try { markup = decodeURIComponent(markup) } catch { /* already plain text */ }
+      const img = await loadImageFromUrl('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup))
+      const scale = 2
+      const canvas = document.createElement('canvas')
+      canvas.width = w * scale
+      canvas.height = h * scale
+      const ctx = canvas.getContext('2d')
+      let png: string | null = null
+      if (img && ctx) {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        try { png = canvas.toDataURL('image/png') } catch { png = null }
+      }
+      if (!png) warnings.push('Component ' + component.id + ' SVG image could not be converted to a picture and was left as an SVG.')
+      pngs.push(png)
     }
-    if (png) {
-      component.content = component.content.replace(svgImg, (_all, head) => head + '"' + png + '"')
-    } else {
-      warnings.push('Component ' + component.id + ' SVG image could not be converted to a picture and will be skipped in PPTX.')
-    }
+    let next = 0
+    component.content = content.replace(svgImg, (whole, head: string) => {
+      const png = pngs[next]
+      next += 1
+      return png ? head + '"' + png + '"' : whole
+    })
   }
 }
 
@@ -173,7 +180,7 @@ function findRasterCandidates(renderRoot: HTMLElement, win: Window): RasterCandi
   // has a fill/border/shadow/gradient and carries no text of its own. Two or more of
   // these signal a designed graphic (an infographic), even when the boxes are empty.
   const visualBoxes = allEls.filter((el) => {
-    if (el === renderRoot || gradientSet.has(el) || hasOwnTextNode(el)) return false
+    if (gradientSet.has(el) || hasOwnTextNode(el)) return false
     const cs = win.getComputedStyle(el)
     const shadow = (cs.boxShadow || '').trim()
     const filter = (cs.filter || '').trim()

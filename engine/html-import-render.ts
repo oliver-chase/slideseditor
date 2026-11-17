@@ -1,4 +1,4 @@
-import { IMPORT_ROOT_MARKER_ATTR, IMPORT_ROOT_MARKER_VALUE } from './html-import-shared'
+import { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, IMPORT_ROOT_MARKER_ATTR, IMPORT_ROOT_MARKER_VALUE } from './html-import-shared'
 import type { InlinedStyleChunk, MeasuredNodeRect, RenderSnapshot } from './html-import-shared'
 
 export function normalizeImportedHtmlMarkup(html: string, warnings: string[]): string {
@@ -100,7 +100,7 @@ function emptyRenderSnapshot(): RenderSnapshot {
   return { root: null, nodesById: new Map(), dispose: () => {} }
 }
 
-// An invisible, script-less iframe that lays the slide out at 1920x1080 for measuring.
+// An invisible, script-less iframe that lays the slide out at the default canvas size for measuring.
 function createHiddenRenderFrame(): HTMLIFrameElement {
   const iframe = document.createElement('iframe')
   iframe.setAttribute('aria-hidden', 'true')
@@ -108,8 +108,8 @@ function createHiddenRenderFrame(): HTMLIFrameElement {
   iframe.style.position = 'fixed'
   iframe.style.left = '-100000px'
   iframe.style.top = '-100000px'
-  iframe.style.width = '1920px'
-  iframe.style.height = '1080px'
+  iframe.style.width = DEFAULT_CANVAS_WIDTH + 'px'
+  iframe.style.height = DEFAULT_CANVAS_HEIGHT + 'px'
   iframe.style.opacity = '0'
   iframe.style.pointerEvents = 'none'
   iframe.style.zIndex = '-1'

@@ -84,7 +84,8 @@ async function parseCssImportUrls(
   recursionDepth = 0,
 ): Promise<CssImportResult> {
   if (recursionDepth > CSS_IMPORT_MAX_RECURSION_DEPTH) {
-    return { cssText, importedCount: 0, unresolvedCount: 0 }
+    // Past the depth limit the text is kept as it is, and every @import left in it is unresolved.
+    return { cssText, importedCount: 0, unresolvedCount: (cssText.match(/@import/gi) || []).length }
   }
 
   const stripped = stripCssComments(cssText)

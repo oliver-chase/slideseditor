@@ -121,10 +121,12 @@ function selectImportNodes(allNodes: HTMLElement[], renderSnapshot: RenderSnapsh
   const absoluteNodes = allNodes.filter((node) => shouldImportNode(node, readComputedStyleSafe(renderNodeOf(node))))
   const fallbackNodes = Array.from(root.children).filter((node): node is HTMLElement => node instanceof HTMLElement)
   if (absoluteNodes.length > 0) return { absoluteNodes, flowNodes: [], nodes: absoluteNodes, importMode: 'absolute' }
-  const flowNodes = allNodes.filter((node) => {
+  const flowCandidates = allNodes.filter((node) => {
     const renderNode = renderNodeOf(node)
     return shouldImportFlowNode(node, readComputedStyleSafe(renderNode), measureNodeRect(renderNode, renderRoot))
   })
+  // Each layer holds its whole content, so an element inside another imported element would repeat its text.
+  const flowNodes = flowCandidates.filter((node) => !flowCandidates.some((other) => other !== node && other.contains(node)))
   if (flowNodes.length > 0) return { absoluteNodes, flowNodes, nodes: flowNodes, importMode: 'flow' }
   if (fallbackNodes.length > 0) return { absoluteNodes, flowNodes, nodes: fallbackNodes, importMode: 'fallback' }
   return { absoluteNodes, flowNodes, nodes: [root], importMode: 'root-fallback' }
@@ -235,8 +237,8 @@ export async function convertHtmlToSlideComponents(html: string): Promise<SlideI
 
     // For visually-rich designed graphics (gradients, gradient text, stacked cards),
     // flatten non-text visuals into one artwork picture + gradient-text images +
-    // editable text boxes, instead of the native shape/text path that overlaps and
-    // breaks. Returns null for simple text-on-solid slides, which use the native path.
+    // editable text boxes, because native shapes and text overlap and break on those slides.
+    // Returns null for simple text-on-solid slides, which use the native path.
     const rasterComponents = await buildRasterizedSlide(renderSnapshot, root, size.width, size.height, warnings)
     const components: SlideComponent[] = rasterComponents ? rasterComponents.slice() : []
 

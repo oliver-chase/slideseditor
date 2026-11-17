@@ -7,9 +7,9 @@ import { asCanonicalDimension, asCanonicalDimensionOptional, parseAttrPx, parseS
 import { buildSanitizedContentNode, collectNestedTextLeaves, getNodeLabel, inferType, resolveSvgImageFallback } from './html-import-markup'
 
 // In absolute mode, split text nested inside a positioned container into its own
-// text-box layers (each keeps its font/size/color) instead of collapsing the whole
-// container into one uniform text blob. The container is then imported as a
-// background/shape layer with the extracted text removed.
+// text-box layers, each with its own font, size and color, so the container does not become one
+// uniform text blob. The container is then imported as a background or shape layer with the
+// extracted text removed.
 export function planNestedTextSplit(
   selection: NodeSelection,
   allNodes: HTMLElement[],
@@ -90,15 +90,13 @@ export function buildNodeComponents(node: HTMLElement, index: number, ctx: NodeB
   const extractedStyle = extractStyle(styleMap, computedStyle, warnings, nodeLabel)
   const fallbackLocked = importMode === 'fallback' || importMode === 'root-fallback'
   const components: SlideComponent[] = []
-  const pseudoForHost = ctx.pseudoByHost.get(nodeId)
-  if (pseudoForHost) {
-    components.push(
-      ...pseudoForHost.map((entry, pseudoIndex) => ({
-        ...entry,
-        id: `import-${String(index + 1).padStart(3, '0')}-${pseudoIndex + 1}-${entry.sourceLabel?.replace(/[^a-z0-9-]/gi, '-') || 'pseudo'}`,
-      })),
-    )
-  }
+  // A ::before layer is drawn below its host and an ::after layer above it.
+  const pseudoForHost = (ctx.pseudoByHost.get(nodeId) || []).map((entry, pseudoIndex) => ({
+    ...entry,
+    id: `import-${String(index + 1).padStart(3, '0')}-${pseudoIndex + 1}-${entry.sourceLabel?.replace(/[^a-z0-9-]/gi, '-') || 'pseudo'}`,
+  }))
+  const isAfter = (entry: SlideComponent) => (entry.sourceLabel || '').includes('::after')
+  components.push(...pseudoForHost.filter((entry) => !isAfter(entry)))
   components.push({
     id: 'import-' + String(index + 1).padStart(3, '0'),
     type: inferType(node),
@@ -112,5 +110,6 @@ export function buildNodeComponents(node: HTMLElement, index: number, ctx: NodeB
     locked: fallbackLocked,
     visible: true,
   })
+  components.push(...pseudoForHost.filter(isAfter))
   return components
 }

@@ -472,7 +472,8 @@ async function parseCssImportUrls(
   recursionDepth = 0,
 )                           {
   if (recursionDepth > CSS_IMPORT_MAX_RECURSION_DEPTH) {
-    return { cssText, importedCount: 0, unresolvedCount: 0 }
+    // Past the depth limit the text is kept as it is, and every @import left in it is unresolved.
+    return { cssText, importedCount: 0, unresolvedCount: (cssText.match(/@import/gi) || []).length }
   }
 
   const stripped = stripCssComments(cssText)
@@ -791,7 +792,7 @@ function emptyRenderSnapshot()                 {
   return { root: null, nodesById: new Map(), dispose: () => {} }
 }
 
-// An invisible, script-less iframe that lays the slide out at 1920x1080 for measuring.
+// An invisible, script-less iframe that lays the slide out at the default canvas size for measuring.
 function createHiddenRenderFrame()                    {
   const iframe = document.createElement('iframe')
   iframe.setAttribute('aria-hidden', 'true')
@@ -799,8 +800,8 @@ function createHiddenRenderFrame()                    {
   iframe.style.position = 'fixed'
   iframe.style.left = '-100000px'
   iframe.style.top = '-100000px'
-  iframe.style.width = '1920px'
-  iframe.style.height = '1080px'
+  iframe.style.width = DEFAULT_CANVAS_WIDTH + 'px'
+  iframe.style.height = DEFAULT_CANVAS_HEIGHT + 'px'
   iframe.style.opacity = '0'
   iframe.style.pointerEvents = 'none'
   iframe.style.zIndex = '-1'
@@ -931,7 +932,7 @@ function resolveFontFamily(rawFamily        , warnings          , nodeLabel     
     .some((family) => ['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy'].includes(family))
   if (hasGeneric) return rawFamily
 
-  const fallback = /\b(serif|arial|times|georgia|garamond|didot|cambria|cochin|palatino|lucida)\b/i.test(rawFamily)
+  const fallback = /\b(serif|times|georgia|garamond|didot|cambria|cochin|palatino)\b/i.test(rawFamily)
     ? 'serif'
     : 'sans-serif'
   const sanitized = rawFamily.trim() ? `${rawFamily}, ${fallback}` : fallback
@@ -1552,9 +1553,16 @@ function estimateNodeAreaFromDeclaredSize(node             )         {
 // The one sanitizer: parse the markup with the browser's own parser (inert, no scripts run or
 // resources load) and remove active content from the result.
 function sanitizeMarkup(html        )         {
-  const doc = new DOMParser().parseFromString('<!doctype html><body>' + html, 'text/html')
-  sanitizeNodeInPlace(doc.body)
-  return doc.body.innerHTML
+  let current = html
+  // Serializing and parsing again can expose markup that the first parse kept as text, so repeat until the output stops changing.
+  for (let pass = 0; pass < 3; pass += 1) {
+    const doc = new DOMParser().parseFromString('<!doctype html><body>' + current, 'text/html')
+    sanitizeNodeInPlace(doc.body)
+    const cleaned = doc.body.innerHTML
+    if (cleaned === current) return cleaned
+    current = cleaned
+  }
+  return current
 }
 
 // Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside
@@ -1568,7 +1576,7 @@ const URL_ATTRIBUTES = new Set(['href', 'src', 'xlink:href', 'formaction', 'acti
 
 function sanitizeNodeInPlace(root             )       {
   // animate and set can rewrite an href to a script URL after the page loads.
-  root.querySelectorAll('script,style,iframe,object,embed,link,meta,base,animate,set').forEach(el => el.remove())
+  root.querySelectorAll('script,style,iframe,object,embed,link,meta,base,animate,set,noscript,noembed,noframes,xmp,plaintext,template').forEach(el => el.remove())
 
   const allNodes = [root, ...Array.from(root.querySelectorAll             ('*'))]
   for (const element of allNodes) {
@@ -1656,12 +1664,10 @@ function getCanvasRoot(doc          )                     {
     if (best?.candidate) return best.candidate
   }
 
-  // Only a div/section/article/main explicitly marked as a slide/deck/canvas/frame/artboard
-  // may stand in for the real page root — an unmarked sized box (a card, a tag, a tile) is
-  // slide CONTENT, never the slide itself. Without this guard, any inner element with an
-  // explicit width+height whose aspect ratio happens to sit near 16:9 could outscore the
-  // real page canvas on ratio alone and get treated as the whole slide, silently clipping
-  // everything outside it — reproduced with a real deck body containing multiple sized cards.
+  // Only a div, section, article or main marked as a slide, deck, canvas, frame or artboard
+  // may stand in for the page root. An unmarked sized box (a card, a tag, a tile) is slide
+  // content. An inner element with a declared width and height near 16:9 would otherwise
+  // outscore the real page canvas on ratio and clip everything outside it.
   const scoredCandidates = Array.from(doc.body.querySelectorAll             ('div,section,article,main'))
     .map((candidate) => {
       const styleMap = parseRuleDeclarations(candidate.getAttribute('style') || '')
@@ -1826,15 +1832,6 @@ function collectNestedTextLeaves(
   return leaves
 }
 
-// ---- Rasterization pipeline for designed graphics --------------------------------
-// Designed graphics (gradient bursts, gradient-clipped text, stacked cards/meters)
-// cannot be reproduced faithfully as native PPTX shapes/text — they overlap and break.
-// For a visually-rich slide we instead: (1) flatten ALL non-text visuals (background,
-// boxes, lines, meters, images) into ONE picture layer; (2) rasterize each gradient
-// text run to its own picture layer (native PPTX has no gradient-clipped text); and
-// (3) keep every plain-text run as an editable text box on top. Simple text-on-solid
-// slides skip this entirely and use the native path.
-
 // ===== html-import-pseudo.ts =====
 function parsePseudoLayerDescriptors(styleText        , root             )                          {
   const descriptors                          = []
@@ -1976,8 +1973,6 @@ function extractPseudoComponents(
 
     const renderNode = renderSnapshot.nodesById.get(hostId) || hostNode
     const measuredHost = measureNodeRect(renderNode, renderRoot)
-    const hostStyleMap = parseRuleDeclarations(hostNode.getAttribute('style') || '')
-    const hostComputedStyle = readComputedStyleSafe(renderNode)
     const hostLabel = getNodeLabel(hostNode)
 
     const pseudoLabel = hostLabel + '::' + pseudo
@@ -1991,11 +1986,9 @@ function extractPseudoComponents(
     const pseudoX = hostX + computePseudoOffset(styleMap, 'x', measuredHost, pseudoLabel, warnings)
     const pseudoY = hostY + computePseudoOffset(styleMap, 'y', measuredHost, pseudoLabel, warnings)
 
-    const mergedStyleMap = {
-      ...hostStyleMap,
-      ...styleMap,
-    }
-    const extractedStyle = extractStyle(mergedStyleMap, hostComputedStyle, warnings, pseudoLabel)
+    // The layer takes its own declarations and its own computed style, so it never copies the host's fill or border.
+    const pseudoComputedStyle = renderNode.ownerDocument?.defaultView?.getComputedStyle(renderNode, '::' + pseudo) ?? null
+    const extractedStyle = extractStyle(styleMap, pseudoComputedStyle, warnings, pseudoLabel)
 
     const pseudoComponent                 = {
       id: `import-${hostId}-${pseudo}-${order}`,
@@ -2084,32 +2077,39 @@ async function drawSvgToPng(svgUrl        , w        , h        , scale        )
 
 // PowerPoint cannot embed a plain SVG, so turn each SVG image into a PNG at the component's size.
 async function rasterizeSvgComponents(components                  , warnings          )                {
-  const svgImg = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"(data:image\/svg\+xml[^"]*)"|'(data:image\/svg\+xml[^']*)')/i
+  const svgImg = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"(data:image\/svg\+xml[^"]*)"|'(data:image\/svg\+xml[^']*)')/gi
   for (const component of components) {
-    const match = (component.content || '').match(svgImg)
-    if (!match) continue
+    const content = component.content || ''
+    const matches = Array.from(content.matchAll(svgImg))
+    if (matches.length === 0) continue
     const w = Math.max(1, Math.round(component.width || 0))
     const h = Math.max(1, Math.round(component.height || component.width || 0))
-    const unescaped = (match[2] ?? match[3]).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-    const comma = unescaped.indexOf(',')
-    let markup = unescaped.slice(comma + 1)
-    try { markup = decodeURIComponent(markup) } catch { /* already plain text */ }
-    const img = await loadImageFromUrl('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup))
-    const canvas = document.createElement('canvas')
-    const scale = 2
-    canvas.width = w * scale
-    canvas.height = h * scale
-    const ctx = canvas.getContext('2d')
-    let png                = null
-    if (img && ctx) {
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-      try { png = canvas.toDataURL('image/png') } catch { png = null }
+    // Convert every SVG image of the component, in order, and keep the original for any that fails.
+    const pngs                       = []
+    for (const match of matches) {
+      const unescaped = (match[2] ?? match[3]).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+      let markup = unescaped.slice(unescaped.indexOf(',') + 1)
+      try { markup = decodeURIComponent(markup) } catch { /* already plain text */ }
+      const img = await loadImageFromUrl('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup))
+      const scale = 2
+      const canvas = document.createElement('canvas')
+      canvas.width = w * scale
+      canvas.height = h * scale
+      const ctx = canvas.getContext('2d')
+      let png                = null
+      if (img && ctx) {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        try { png = canvas.toDataURL('image/png') } catch { png = null }
+      }
+      if (!png) warnings.push('Component ' + component.id + ' SVG image could not be converted to a picture and was left as an SVG.')
+      pngs.push(png)
     }
-    if (png) {
-      component.content = component.content.replace(svgImg, (_all, head) => head + '"' + png + '"')
-    } else {
-      warnings.push('Component ' + component.id + ' SVG image could not be converted to a picture and will be skipped in PPTX.')
-    }
+    let next = 0
+    component.content = content.replace(svgImg, (whole, head        ) => {
+      const png = pngs[next]
+      next += 1
+      return png ? head + '"' + png + '"' : whole
+    })
   }
 }
 
@@ -2213,7 +2213,7 @@ function findRasterCandidates(renderRoot             , win        )             
   // has a fill/border/shadow/gradient and carries no text of its own. Two or more of
   // these signal a designed graphic (an infographic), even when the boxes are empty.
   const visualBoxes = allEls.filter((el) => {
-    if (el === renderRoot || gradientSet.has(el) || hasOwnTextNode(el)) return false
+    if (gradientSet.has(el) || hasOwnTextNode(el)) return false
     const cs = win.getComputedStyle(el)
     const shadow = (cs.boxShadow || '').trim()
     const filter = (cs.filter || '').trim()
@@ -2382,9 +2382,9 @@ function escapeHtmlText(text        )         {
 
 // ===== html-import-nodes.ts =====
 // In absolute mode, split text nested inside a positioned container into its own
-// text-box layers (each keeps its font/size/color) instead of collapsing the whole
-// container into one uniform text blob. The container is then imported as a
-// background/shape layer with the extracted text removed.
+// text-box layers, each with its own font, size and color, so the container does not become one
+// uniform text blob. The container is then imported as a background or shape layer with the
+// extracted text removed.
 function planNestedTextSplit(
   selection               ,
   allNodes               ,
@@ -2465,15 +2465,13 @@ function buildNodeComponents(node             , index        , ctx              
   const extractedStyle = extractStyle(styleMap, computedStyle, warnings, nodeLabel)
   const fallbackLocked = importMode === 'fallback' || importMode === 'root-fallback'
   const components                   = []
-  const pseudoForHost = ctx.pseudoByHost.get(nodeId)
-  if (pseudoForHost) {
-    components.push(
-      ...pseudoForHost.map((entry, pseudoIndex) => ({
-        ...entry,
-        id: `import-${String(index + 1).padStart(3, '0')}-${pseudoIndex + 1}-${entry.sourceLabel?.replace(/[^a-z0-9-]/gi, '-') || 'pseudo'}`,
-      })),
-    )
-  }
+  // A ::before layer is drawn below its host and an ::after layer above it.
+  const pseudoForHost = (ctx.pseudoByHost.get(nodeId) || []).map((entry, pseudoIndex) => ({
+    ...entry,
+    id: `import-${String(index + 1).padStart(3, '0')}-${pseudoIndex + 1}-${entry.sourceLabel?.replace(/[^a-z0-9-]/gi, '-') || 'pseudo'}`,
+  }))
+  const isAfter = (entry                ) => (entry.sourceLabel || '').includes('::after')
+  components.push(...pseudoForHost.filter((entry) => !isAfter(entry)))
   components.push({
     id: 'import-' + String(index + 1).padStart(3, '0'),
     type: inferType(node),
@@ -2487,6 +2485,7 @@ function buildNodeComponents(node             , index        , ctx              
     locked: fallbackLocked,
     visible: true,
   })
+  components.push(...pseudoForHost.filter(isAfter))
   return components
 }
 
@@ -2601,10 +2600,12 @@ function selectImportNodes(allNodes               , renderSnapshot              
   const absoluteNodes = allNodes.filter((node) => shouldImportNode(node, readComputedStyleSafe(renderNodeOf(node))))
   const fallbackNodes = Array.from(root.children).filter((node)                      => node instanceof HTMLElement)
   if (absoluteNodes.length > 0) return { absoluteNodes, flowNodes: [], nodes: absoluteNodes, importMode: 'absolute' }
-  const flowNodes = allNodes.filter((node) => {
+  const flowCandidates = allNodes.filter((node) => {
     const renderNode = renderNodeOf(node)
     return shouldImportFlowNode(node, readComputedStyleSafe(renderNode), measureNodeRect(renderNode, renderRoot))
   })
+  // Each layer holds its whole content, so an element inside another imported element would repeat its text.
+  const flowNodes = flowCandidates.filter((node) => !flowCandidates.some((other) => other !== node && other.contains(node)))
   if (flowNodes.length > 0) return { absoluteNodes, flowNodes, nodes: flowNodes, importMode: 'flow' }
   if (fallbackNodes.length > 0) return { absoluteNodes, flowNodes, nodes: fallbackNodes, importMode: 'fallback' }
   return { absoluteNodes, flowNodes, nodes: [root], importMode: 'root-fallback' }
@@ -2715,8 +2716,8 @@ async function convertHtmlToSlideComponents(html        )                       
 
     // For visually-rich designed graphics (gradients, gradient text, stacked cards),
     // flatten non-text visuals into one artwork picture + gradient-text images +
-    // editable text boxes, instead of the native shape/text path that overlaps and
-    // breaks. Returns null for simple text-on-solid slides, which use the native path.
+    // editable text boxes, because native shapes and text overlap and break on those slides.
+    // Returns null for simple text-on-solid slides, which use the native path.
     const rasterComponents = await buildRasterizedSlide(renderSnapshot, root, size.width, size.height, warnings)
     const components                   = rasterComponents ? rasterComponents.slice() : []
 

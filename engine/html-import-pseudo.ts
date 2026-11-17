@@ -2,7 +2,7 @@ import type { SlideComponent } from './types'
 import { IMPORT_ROOT_NODE_ID } from './html-import-shared'
 import type { MeasuredNodeRect, PseudoLayerDescriptor, RenderSnapshot } from './html-import-shared'
 import { getCssImportUrl, parseRuleDeclarations, stripWrappingQuotes } from './html-import-css'
-import { measureNodeRect, readComputedStyleSafe } from './html-import-render'
+import { measureNodeRect } from './html-import-render'
 import { extractStyle, parseRuleValueExists } from './html-import-values'
 import { asCanonicalDimension, asCanonicalDimensionOptional, parseStylePositionPx, parseStylePx } from './html-import-position'
 import { escapeAttribute, getNodeLabel } from './html-import-markup'
@@ -148,8 +148,6 @@ function extractPseudoComponents(
 
     const renderNode = renderSnapshot.nodesById.get(hostId) || hostNode
     const measuredHost = measureNodeRect(renderNode, renderRoot)
-    const hostStyleMap = parseRuleDeclarations(hostNode.getAttribute('style') || '')
-    const hostComputedStyle = readComputedStyleSafe(renderNode)
     const hostLabel = getNodeLabel(hostNode)
 
     const pseudoLabel = hostLabel + '::' + pseudo
@@ -163,11 +161,9 @@ function extractPseudoComponents(
     const pseudoX = hostX + computePseudoOffset(styleMap, 'x', measuredHost, pseudoLabel, warnings)
     const pseudoY = hostY + computePseudoOffset(styleMap, 'y', measuredHost, pseudoLabel, warnings)
 
-    const mergedStyleMap = {
-      ...hostStyleMap,
-      ...styleMap,
-    }
-    const extractedStyle = extractStyle(mergedStyleMap, hostComputedStyle, warnings, pseudoLabel)
+    // The layer takes its own declarations and its own computed style, so it never copies the host's fill or border.
+    const pseudoComputedStyle = renderNode.ownerDocument?.defaultView?.getComputedStyle(renderNode, '::' + pseudo) ?? null
+    const extractedStyle = extractStyle(styleMap, pseudoComputedStyle, warnings, pseudoLabel)
 
     const pseudoComponent: SlideComponent = {
       id: `import-${hostId}-${pseudo}-${order}`,

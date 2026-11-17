@@ -2896,8 +2896,7 @@ const SLIDE_HEIGHT_EMU = 5_143_500
 // CSS reference pixel at 96dpi: 1px = 9525 EMU. Sizing the slide this way keeps the
 // geometry scale and the font scale (1px = 0.75pt) consistent BY CONSTRUCTION — a
 // 28px heading in a 1920px canvas exports as a 21pt run in a 20in slide, exactly the
-// proportion the browser rendered. (The previous pin-to-10in normalization scaled
-// geometry but not fonts, so text exported ~2x too large and overlapped.)
+// proportion the browser rendered.
 const EMU_PER_PX = 9525
 
 // PowerPoint's hard ceiling is 56in per axis (51,206,400 EMU).
@@ -3506,8 +3505,9 @@ function buildPresentationXml(slideCount        , slideEmu          )         {
     `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`,
   ).join('')
 
-  // Emit the type hint only for the exact 16:9 ratio; for any other size cx/cy are
-  // authoritative and a mismatched type hint would confuse PowerPoint.
+  // The type hint is written only when the slide is exactly 9,144,000 by 5,143,500 EMU,
+  // which is a 960 by 540 px canvas. For any other size cx and cy define the slide, and a
+  // type hint would conflict with them.
   const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
   const sizeType = isScreen16x9 ? ' type="screen16x9"' : ''
 
@@ -3674,7 +3674,7 @@ function buildSlideXml(
         continue
       }
       // Decoding failed and already warned. An image-only logo has nothing else to
-      // render, so skip it rather than falling through to an empty text shape.
+      // render, so it is skipped and no empty text shape is written.
       if (component.type === 'logo') continue
       // Otherwise fall through: the component may still have text/background/border.
     } else if (component.type === 'logo') {

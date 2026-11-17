@@ -25,8 +25,9 @@ export function buildPresentationXml(slideCount: number, slideEmu: SlideEmu): st
     `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`,
   ).join('')
 
-  // Emit the type hint only for the exact 16:9 ratio; for any other size cx/cy are
-  // authoritative and a mismatched type hint would confuse PowerPoint.
+  // The type hint is written only when the slide is exactly 9,144,000 by 5,143,500 EMU,
+  // which is a 960 by 540 px canvas. For any other size cx and cy define the slide, and a
+  // type hint would conflict with them.
   const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
   const sizeType = isScreen16x9 ? ' type="screen16x9"' : ''
 

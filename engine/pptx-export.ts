@@ -140,7 +140,7 @@ function buildSlideXml(
         continue
       }
       // Decoding failed and already warned. An image-only logo has nothing else to
-      // render, so skip it rather than falling through to an empty text shape.
+      // render, so it is skipped and no empty text shape is written.
       if (component.type === 'logo') continue
       // Otherwise fall through: the component may still have text/background/border.
     } else if (component.type === 'logo') {

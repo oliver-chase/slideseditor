@@ -39,7 +39,7 @@ The converter can preserve editability because HTML already describes a slide as
 
 A positioned HTML element becomes its own PowerPoint layer. Text inside that element becomes its own editable text box. Images and solid shapes convert to their own layers. Gradients and stacked styled boxes are flattened into one locked artwork picture behind the text.
 
-A PNG or JPG has no underlying structure to preserve. It therefore imports as one picture layer.
+An image file (PNG, JPG, GIF or WebP) has no underlying structure to preserve. It therefore imports as one picture layer.
 
 The converter does not attempt to extract text from images with OCR. Reliable OCR would be a separate problem and is outside the scope of this tool.
 
@@ -61,7 +61,7 @@ engine/
 
 contains the pure-TypeScript conversion engine for HTML/PNG import and PPTX/HTML export.
 
-The engine is seven files. At build time, `scripts/build-bundle.mjs` strips the TypeScript types, combines the engine into one `window.SlideEngine` IIFE, and inlines it into the shell.
+The engine is a set of small files, each under 400 lines. At build time, `scripts/build-bundle.mjs` strips the TypeScript types, combines the engine into one `window.SlideEngine` IIFE, and inlines it into the shell.
 
 The result is:
 
@@ -86,7 +86,7 @@ for t in tests/*.test.mjs; do node "$t"; done
 ## What it supports
 
 * HTML input — converted into editable PowerPoint text boxes, images, and shapes
-* PNG/JPG input — imported as a single image layer
+* PNG, JPG, GIF and WebP input — imported as a single image layer
 * PPTX export — the primary output
 * HTML export — for sharing or inspection
 * Native canvas — preserves the source dimensions
@@ -114,6 +114,7 @@ slideeditor.html          The deliverable — open this in a browser
 src/shell.html            Converter UI source
 engine/                   Pure-TypeScript conversion engine
 scripts/build-bundle.mjs  Zero-dependency bundler
+tests/                    Node tests that bundle the engine from source
 ARCHITECTURE.md           How the pieces fit
 ```
 

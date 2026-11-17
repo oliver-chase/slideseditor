@@ -15,8 +15,7 @@ export const SLIDE_HEIGHT_EMU = 5_143_500
 // CSS reference pixel at 96dpi: 1px = 9525 EMU. Sizing the slide this way keeps the
 // geometry scale and the font scale (1px = 0.75pt) consistent BY CONSTRUCTION — a
 // 28px heading in a 1920px canvas exports as a 21pt run in a 20in slide, exactly the
-// proportion the browser rendered. (The previous pin-to-10in normalization scaled
-// geometry but not fonts, so text exported ~2x too large and overlapped.)
+// proportion the browser rendered.
 export const EMU_PER_PX = 9525
 
 // PowerPoint's hard ceiling is 56in per axis (51,206,400 EMU).

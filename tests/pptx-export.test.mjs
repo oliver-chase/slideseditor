@@ -147,4 +147,12 @@ const remote = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, com
 const remoteResult = E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: remote }])
 assert.ok(remoteResult.warnings.some((w) => w.includes('r') && w.includes('not embedded')), 'an image that is not embedded is reported')
 
+// Inline bold, italic, underline and color become runs of their own.
+const runsXml = await slideXml('Plain <strong>bold</strong> and <span style="color:#ff0000;font-style:italic">red italic</span><br>Next <u>line</u> <font color="blue">blue</font>')
+assert.ok(/<a:rPr[^>]* b="1"[^>]*>(?:(?!<\/a:r>)[\s\S])*?<a:t>bold<\/a:t>/.test(runsXml), 'a strong run is bold')
+assert.ok(/<a:rPr[^>]* i="1"[^>]*><a:solidFill><a:srgbClr val="FF0000"\/>(?:(?!<\/a:r>)[\s\S])*?<a:t>red italic<\/a:t>/.test(runsXml), 'a styled span carries its color and italic')
+assert.ok(/<a:rPr[^>]* u="sng"[^>]*>(?:(?!<\/a:r>)[\s\S])*?<a:t>line<\/a:t>/.test(runsXml), 'an underline run is underlined')
+assert.equal((runsXml.match(/<a:p>/g) || []).length, 2, 'a br starts a second paragraph')
+assert.ok(/<a:t>Plain <\/a:t>/.test(runsXml), 'plain text keeps its trailing space')
+
 console.log('pptx-export tests passed')

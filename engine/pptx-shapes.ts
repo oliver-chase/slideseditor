@@ -1,6 +1,7 @@
 import type { SlideComponent } from './types'
-import { clamp, escXml, toEmu, toEmuOffset, toPlainText } from './pptx-shared'
-import { buildLineXml, buildShapeFillXml, normalizeHexColor, parseBoxShadow, toPptAlpha } from './pptx-paint'
+import { clamp, escXml, toEmu, toEmuOffset, toPlainText, toTextLines } from './pptx-shared'
+import type { TextRun } from './pptx-shared'
+import { buildLineXml, buildShapeFillXml, normalizeHexColor, parseBoxShadow, parseCssColor, toPptAlpha } from './pptx-paint'
 
 function fontSizeForComponent(component: SlideComponent): number {
   if (typeof component.style.fontSize === 'number' && component.style.fontSize > 0) {
@@ -26,7 +27,7 @@ function resolveTypeface(fontFamily: string | undefined): string {
 }
 
 function buildTextParagraphs(
-  text: string,
+  lines: TextRun[][],
   fontSizePx: number,
   textColorHex: string,
   align: string,
@@ -37,13 +38,10 @@ function buildTextParagraphs(
   lineHeightPx?: number,
   letterSpacingPx?: number,
 ): string {
-  const lines = text.split('\n')
   // fontSizePx arrives as CSS px; PPTX sz is hundredths of a point (px * 0.75 = pt).
   // fontScale (normally 1) shrinks fonts with the geometry when a huge canvas had to
   // be scaled down to fit PowerPoint's 56in axis limit.
   const size = Math.round(clamp(fontSizePx * 0.75 * fontScale, 4, 400) * 100)
-  const boldAttr = bold ? ' b="1"' : ''
-  const italicAttr = italic ? ' i="1"' : ''
   // line-height and letter-spacing arrive as CSS px; spcPts and spc are hundredths of a point.
   const spacingAttr = letterSpacingPx ? ` spc="${Math.round(clamp(letterSpacingPx * 0.75 * fontScale, -400, 2000) * 100)}"` : ''
   const lineSpacingXml = lineHeightPx && lineHeightPx > 0
@@ -51,10 +49,18 @@ function buildTextParagraphs(
     : ''
   const pPr = lineSpacingXml ? `<a:pPr algn="${align}">${lineSpacingXml}</a:pPr>` : `<a:pPr algn="${align}"/>`
 
-  return lines
+  const runXml = (run: TextRun): string => {
+    const boldAttr = bold || run.bold ? ' b="1"' : ''
+    const italicAttr = italic || run.italic ? ' i="1"' : ''
+    const underlineAttr = run.underline ? ' u="sng"' : ''
+    const color = (run.color ? parseCssColor(run.color)?.hex : undefined) || textColorHex
+    return `<a:r><a:rPr lang="en-US" sz="${size}"${boldAttr}${italicAttr}${underlineAttr}${spacingAttr}><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:latin typeface="${escXml(typeface)}"/></a:rPr><a:t>${escXml(run.text)}</a:t></a:r>`
+  }
+  const blank: TextRun = { text: ' ', bold: false, italic: false, underline: false }
+  return (lines.length > 0 ? lines : [[]])
     .map((line) => {
-      const content = line.trim().length > 0 ? line : ' '
-      return `<a:p>${pPr}<a:r><a:rPr lang="en-US" sz="${size}"${boldAttr}${italicAttr}${spacingAttr}><a:solidFill><a:srgbClr val="${textColorHex}"/></a:solidFill><a:latin typeface="${escXml(typeface)}"/></a:rPr><a:t>${escXml(content)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${size}"/></a:p>`
+      const runs = line.some((run) => run.text.trim().length > 0) ? line : [blank]
+      return `<a:p>${pPr}${runs.map(runXml).join('')}<a:endParaRPr lang="en-US" sz="${size}"/></a:p>`
     })
     .join('')
 }
@@ -229,7 +235,7 @@ export function buildShapeXml(
   // L/O/W in the exact-measured box. Let short runs overflow instead of wrapping.
   const singleLine = !text.includes('\n') &&
     typeof component.height === 'number' && component.height > 0 && component.height <= fontSize * 1.8
-  const txBody = `<p:txBody><a:bodyPr wrap="${singleLine ? 'none' : 'square'}"/><a:lstStyle/>${buildTextParagraphs(text, fontSize, textColorHex, align, bold, italic, typeface, fontScale, component.style.lineHeight, component.style.letterSpacing)}</p:txBody>`
+  const txBody = `<p:txBody><a:bodyPr wrap="${singleLine ? 'none' : 'square'}"/><a:lstStyle/>${buildTextParagraphs(toTextLines(component.content || ''), fontSize, textColorHex, align, bold, italic, typeface, fontScale, component.style.lineHeight, component.style.letterSpacing)}</p:txBody>`
 
   return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${escXml(component.type + '-' + component.id)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>${spPr}${txBody}</p:sp>`
 }

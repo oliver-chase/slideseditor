@@ -52,22 +52,26 @@ function codePointText(codePoint: number): string {
   return codePoint > 0 && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : ''
 }
 
+// One pass over the references, so "&#38;amp;" decodes once to "&amp;" and not twice to "&".
+const NAMED_REFERENCES: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' }
+
+function decodeReferences(text: string): string {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, ref: string) => {
+    if (ref[0] === '#') {
+      const hex = ref[1] === 'x' || ref[1] === 'X'
+      return codePointText(Number.parseInt(ref.slice(hex ? 2 : 1), hex ? 16 : 10))
+    }
+    return NAMED_REFERENCES[ref.toLowerCase()] ?? match
+  })
+}
+
 export function toPlainText(html: string): string {
   const withLineBreaks = html
     .replace(/<br\s*\/?>(\s*)/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
   const noTags = withLineBreaks.replace(/<[^>]*>/g, '')
-  // One pass over the references, so "&#38;amp;" decodes once to "&amp;" and not twice to "&".
-  const NAMED: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' }
-  return noTags
-    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, ref: string) => {
-      if (ref[0] === '#') {
-        const hex = ref[1] === 'x' || ref[1] === 'X'
-        return codePointText(Number.parseInt(ref.slice(hex ? 2 : 1), hex ? 16 : 10))
-      }
-      return NAMED[ref.toLowerCase()] ?? match
-    })
+  return decodeReferences(noTags)
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
     .trim()
@@ -84,4 +88,90 @@ export function toEmuOffset(px: number, scale: number): number {
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+export interface TextRun {
+  text: string
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  color?: string
+}
+
+interface RunStyle {
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  color?: string
+}
+
+function styleOfTag(tag: string, attributes: string, inherited: RunStyle): RunStyle {
+  const next = { ...inherited }
+  if (tag === 'b' || tag === 'strong') next.bold = true
+  if (tag === 'i' || tag === 'em') next.italic = true
+  if (tag === 'u') next.underline = true
+  const colorAttr = attributes.match(/\bcolor\s*=\s*["']([^"']+)["']/i)
+  if (tag === 'font' && colorAttr) next.color = colorAttr[1]
+  const style = attributes.match(/\bstyle\s*=\s*"([^"]*)"|\bstyle\s*=\s*'([^']*)'/i)
+  const declarations = style ? (style[1] ?? style[2]) : ''
+  for (const declaration of declarations.split(';')) {
+    const colon = declaration.indexOf(':')
+    if (colon < 0) continue
+    const property = declaration.slice(0, colon).trim().toLowerCase()
+    const value = declaration.slice(colon + 1).trim().toLowerCase()
+    if (property === 'font-weight') next.bold = value === 'bold' || value === 'bolder' || Number.parseInt(value, 10) >= 600
+    else if (property === 'font-style') next.italic = value === 'italic' || value === 'oblique'
+    else if (property === 'text-decoration' || property === 'text-decoration-line') next.underline = /underline/.test(value)
+    else if (property === 'color' && value) next.color = declaration.slice(colon + 1).trim()
+  }
+  return next
+}
+
+// Split inline HTML into lines of runs that carry bold, italic, underline and color. Line breaks follow
+// toPlainText: a br and the end of a p or div start a new line.
+export function toTextLines(html: string): TextRun[][] {
+  const lines: TextRun[][] = [[]]
+  const stack: Array<{ tag: string; style: RunStyle }> = []
+  let current: RunStyle = { bold: false, italic: false, underline: false }
+  const pushText = (raw: string): void => {
+    const text = decodeReferences(raw).replace(/\r\n?/g, '\n')
+    const parts = text.split('\n')
+    parts.forEach((part, index) => {
+      if (index > 0) lines.push([])
+      if (part) lines[lines.length - 1].push({ text: part, ...current })
+    })
+  }
+  const tagPattern = /<(\/?)([a-z][a-z0-9]*)([^>]*)>/gi
+  let last = 0
+  let match: RegExpExecArray | null
+  while ((match = tagPattern.exec(html)) !== null) {
+    pushText(html.slice(last, match.index).replace(/\n/g, '\n'))
+    last = match.index + match[0].length
+    const closing = match[1] === '/'
+    const tag = match[2].toLowerCase()
+    if (tag === 'br') { if (!closing) lines.push([]); continue }
+    if (closing) {
+      const at = stack.map((entry) => entry.tag).lastIndexOf(tag)
+      if (at >= 0) {
+        stack.length = at
+        current = stack.length > 0 ? stack[stack.length - 1].style : { bold: false, italic: false, underline: false }
+      }
+      if (tag === 'p' || tag === 'div') lines.push([])
+      continue
+    }
+    if (/\/\s*$/.test(match[3])) continue
+    current = styleOfTag(tag, match[3], current)
+    stack.push({ tag, style: current })
+  }
+  pushText(html.slice(last))
+  // Same trimming as toPlainText: no leading or trailing blank lines or spaces.
+  while (lines.length > 0 && lines[0].every((run) => !run.text.trim())) lines.shift()
+  while (lines.length > 0 && lines[lines.length - 1].every((run) => !run.text.trim())) lines.pop()
+  if (lines.length > 0) {
+    const first = lines[0]
+    if (first.length > 0) first[0] = { ...first[0], text: first[0].text.replace(/^\s+/, '') }
+    const lastLine = lines[lines.length - 1]
+    if (lastLine.length > 0) lastLine[lastLine.length - 1] = { ...lastLine[lastLine.length - 1], text: lastLine[lastLine.length - 1].text.replace(/\s+$/, '') }
+  }
+  return lines
 }

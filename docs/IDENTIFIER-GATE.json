@@ -4,11 +4,13 @@
   "localData": [
     ".github/CODEOWNERS",
     "CLAUDE.md",
-    "tests/pptx-export.test.mjs"
+    "tests/pptx-export.test.mjs",
+    "LICENSE"
   ],
   "localDataReasons": {
     ".github/CODEOWNERS": "GitHub requires the repository owner's handle in the code-owners file.",
     "CLAUDE.md": "Names the GitHub account and Project the backlog lives in.",
-    "tests/pptx-export.test.mjs": "The test searches every export for the maker's name, so it must hold that name."
+    "tests/pptx-export.test.mjs": "The test searches every export for the maker's name, so it must hold that name.",
+    "LICENSE": "The license names the copyright holder, who is the repository owner."
   }
 }

@@ -132,3 +132,7 @@ ARCHITECTURE.md           How the pieces fit
 A local, single-file tool that converts HTML slides into editable PowerPoint decks.
 
 Open `slideeditor.html`, import your slide, and export a `.pptx`. Text becomes real editable text boxes, and the images and shapes on the slide become their own movable PowerPoint layers. A slide with gradients becomes one artwork picture with the text boxes on top.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

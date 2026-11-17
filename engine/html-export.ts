@@ -30,6 +30,7 @@ function serializeStyle(component: SlideComponent): string {
   if (component.style.boxShadow) chunks.push(`box-shadow:${component.style.boxShadow}`)
   if (component.style.fontStyle) chunks.push(`font-style:${component.style.fontStyle}`)
   if (component.style.lineHeight) chunks.push(`line-height:${component.style.lineHeight}px`)
+  if (component.style.letterSpacing) chunks.push(`letter-spacing:${component.style.letterSpacing}px`)
   if (component.style.textAlign) chunks.push(`text-align:${component.style.textAlign}`)
 
   return chunks.join(';')

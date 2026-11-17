@@ -44,6 +44,7 @@ export interface SlideComponentStyle {
   boxShadow?: string
   fontStyle?: 'normal' | 'italic'
   lineHeight?: number
+  letterSpacing?: number
   textAlign?: 'left' | 'center' | 'right' | 'justify'
   textAutoSize?: boolean
 }

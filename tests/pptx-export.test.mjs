@@ -12,8 +12,8 @@ vm.createContext(sandbox)
 vm.runInContext(bundle, sandbox)
 const E = sandbox.window.SlideEngine
 
-function slideXml(content) {
-  const component = { id: 't1', type: 'text', content, x: 40, y: 40, width: 400, height: 60, locked: false, visible: true, sourceLabel: 'test' }
+function slideXml(content, style = {}) {
+  const component = { id: 't1', type: 'text', content, x: 40, y: 40, width: 400, height: 60, locked: false, visible: true, sourceLabel: 'test', style }
   const document = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [component] })
   return E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Test', document }]).blob.arrayBuffer().then((ab) => {
     const buf = Buffer.from(ab)
@@ -49,5 +49,12 @@ assert.ok(dirty.includes('Badchar\tkept'), 'tab is kept')
 
 const doubled = await slideXml('&amp;lt;')
 assert.ok(doubled.includes('>&amp;lt;<'), 'escaped text is decoded once')
+
+const plainSpacing = await slideXml('No spacing')
+assert.ok(!plainSpacing.includes('<a:lnSpc>') && !plainSpacing.includes(' spc='), 'no spacing markup without spacing styles')
+
+const spaced = await slideXml('Spaced out', { lineHeight: 60, letterSpacing: 5 })
+assert.ok(spaced.includes('<a:lnSpc><a:spcPts val="4500"/></a:lnSpc>'), 'line-height 60px becomes 45pt line spacing')
+assert.ok(spaced.includes(' spc="375"'), 'letter-spacing 5px becomes 3.75pt character spacing')
 
 console.log('pptx-export tests passed')

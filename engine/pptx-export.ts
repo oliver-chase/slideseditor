@@ -416,6 +416,8 @@ function buildTextParagraphs(
   italic: boolean,
   typeface: string,
   fontScale = 1,
+  lineHeightPx?: number,
+  letterSpacingPx?: number,
 ): string {
   const lines = text.split('\n')
   // fontSizePt arrives as CSS px; PPTX sz is hundredths of a point (px * 0.75 = pt).
@@ -424,11 +426,17 @@ function buildTextParagraphs(
   const size = Math.round(clamp(fontSizePt * 0.75 * fontScale, 4, 400) * 100)
   const boldAttr = bold ? ' b="1"' : ''
   const italicAttr = italic ? ' i="1"' : ''
+  // line-height and letter-spacing arrive as CSS px; spcPts and spc are hundredths of a point.
+  const spacingAttr = letterSpacingPx ? ` spc="${Math.round(clamp(letterSpacingPx * 0.75 * fontScale, -400, 2000) * 100)}"` : ''
+  const lineSpacingXml = lineHeightPx && lineHeightPx > 0
+    ? `<a:lnSpc><a:spcPts val="${Math.round(clamp(lineHeightPx * 0.75 * fontScale, 1, 4000) * 100)}"/></a:lnSpc>`
+    : ''
+  const pPr = lineSpacingXml ? `<a:pPr algn="${align}">${lineSpacingXml}</a:pPr>` : `<a:pPr algn="${align}"/>`
 
   return lines
     .map((line) => {
       const content = line.trim().length > 0 ? line : ' '
-      return `<a:p><a:pPr algn="${align}"/><a:r><a:rPr lang="en-US" sz="${size}"${boldAttr}${italicAttr}><a:solidFill><a:srgbClr val="${textColorHex}"/></a:solidFill><a:latin typeface="${escXml(typeface)}"/></a:rPr><a:t>${escXml(content)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${size}"/></a:p>`
+      return `<a:p>${pPr}<a:r><a:rPr lang="en-US" sz="${size}"${boldAttr}${italicAttr}${spacingAttr}><a:solidFill><a:srgbClr val="${textColorHex}"/></a:solidFill><a:latin typeface="${escXml(typeface)}"/></a:rPr><a:t>${escXml(content)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${size}"/></a:p>`
     })
     .join('')
 }
@@ -604,7 +612,7 @@ function buildShapeXml(
   // L/O/W in the exact-measured box. Let short runs overflow instead of wrapping.
   const singleLine = !text.includes('\n') &&
     typeof component.height === 'number' && component.height > 0 && component.height <= fontSize * 1.8
-  const txBody = `<p:txBody><a:bodyPr wrap="${singleLine ? 'none' : 'square'}"/><a:lstStyle/>${buildTextParagraphs(text, fontSize, textColorHex, align, bold, italic, typeface, fontScale)}</p:txBody>`
+  const txBody = `<p:txBody><a:bodyPr wrap="${singleLine ? 'none' : 'square'}"/><a:lstStyle/>${buildTextParagraphs(text, fontSize, textColorHex, align, bold, italic, typeface, fontScale, component.style.lineHeight, component.style.letterSpacing)}</p:txBody>`
 
   return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${escXml(component.type + '-' + component.id)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>${spPr}${txBody}</p:sp>`
 }

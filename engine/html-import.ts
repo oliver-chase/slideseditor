@@ -1082,6 +1082,7 @@ function extractStyle(
 ): SlideComponentStyle {
   const fontSizeLength = parseLength(computedStyle?.fontSize || styleMap['font-size'])
   const lineHeightLength = parseLength(computedStyle?.lineHeight || styleMap['line-height'])
+  const letterSpacingLength = parseLength(computedStyle?.letterSpacing || styleMap['letter-spacing'])
   const fontWeight = parseFontWeight(computedStyle?.fontWeight || styleMap['font-weight'])
   const color = normalizeColor(computedStyle?.color || styleMap.color)
   const { backgroundFill, backgroundColor } = resolveComputedBackground(computedStyle, styleMap)
@@ -1112,6 +1113,7 @@ function extractStyle(
     boxShadow,
     fontStyle,
     lineHeight: lineHeightLength && isPxLike(lineHeightLength) ? lineHeightLength.value : undefined,
+    letterSpacing: letterSpacingLength && isPxLike(letterSpacingLength) && letterSpacingLength.value !== 0 ? letterSpacingLength.value : undefined,
     textAlign,
   }
 }

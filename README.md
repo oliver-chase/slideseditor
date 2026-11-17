@@ -109,8 +109,6 @@ Open work and deferred features are tracked in the `slideseditor` GitHub Project
 * SVG input
 * HSL colors
 * Multi-slide conversion
-* Line-height in PPTX
-* Letter-spacing in PPTX
 
 ## Repo layout
 

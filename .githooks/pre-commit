@@ -434,9 +434,7 @@ else
     echo "  docs/SIZE-BASELINE.json is part of this commit, so its baseline of $SIZE_BASE lines is trusted."
     SIZE_HEAD_BASE="$(size_field_of lines "$SIZE_HEAD_JSON")"
     if [ -n "$SIZE_HEAD_BASE" ] && [ "$SIZE_BASE" -gt "$SIZE_HEAD_BASE" ]; then
-      SIZE_CAP_PCT="$(size_field_of raiseCapPercent "$SIZE_HEAD_JSON")"
-      SIZE_CAP=$(( SIZE_HEAD_BASE * ${SIZE_CAP_PCT:-2} / 100 ))
-      echo "  This commit raises the baseline by $(( SIZE_BASE - SIZE_HEAD_BASE )) lines (cap $SIZE_CAP without an L or XL story)."
+      echo "  This commit raises the baseline by $(( SIZE_BASE - SIZE_HEAD_BASE )) lines; the commit-msg hook holds the cap and the Size line it needs."
       # A raised baseline is the counted total, never a hand-picked figure.
       if [ "$SIZE_BASE" -ne "$SIZE_TOTAL" ]; then
         echo "  BLOCKED: the raised baseline is $SIZE_BASE, but the staged tree counts $SIZE_TOTAL lines."
@@ -452,9 +450,9 @@ else
       | awk -F'\t' '$1 != "-" && $1 - $2 > 0 { print $1 - $2 "\t" $3 }' | sort -rn | sed -n 1,3p \
       | while IFS="$(printf '\t')" read -r grown path; do echo "    +$grown  $path"; done
     if [ -f scripts/size_baseline.py ]; then
-      echo "  Remove lines, or run python3 scripts/size_baseline.py --write, stage docs/SIZE-BASELINE.json and put the story number in the message. The script counts the files, so a merge of two branches reruns it and gets one number. A raise over the cap also needs a \"Size: L\" or \"Size: XL\" line."
+      echo "  Remove lines, or run python3 scripts/size_baseline.py --write, stage docs/SIZE-BASELINE.json and put the story number in the message. The script counts the files, so a merge of two branches reruns it and gets one number. The commit-msg hook says when a raise needs a Size line."
     else
-      echo "  Remove lines, or raise \"lines\" in docs/SIZE-BASELINE.json in this commit with the story number in the message. A raise over the cap also needs a \"Size: L\" or \"Size: XL\" line."
+      echo "  Remove lines, or raise \"lines\" in docs/SIZE-BASELINE.json in this commit with the story number in the message. The commit-msg hook says when a raise needs a Size line."
     fi
     exit 1
   fi
@@ -465,8 +463,8 @@ fi
 GATE_NAME="Owner identifiers"
 # OWNER-ID-1. A shipped file cannot name the people or accounts behind the repo. The gate derives
 # the identifiers itself, so no hand-kept list exists: the full names, matched as one phrase, and the
-# email local parts of `git log` authors, the owner segment of the origin remote, and the string values of account and
-# shop keys in the config files that docs/IDENTIFIER-GATE.json lists under "configGlobs". Each is
+# email local parts of `git log` authors, the owner segment of the origin remote, and the string values of the account, shop, store, handle,
+# username, owner, brand and seller keys in the config files that docs/IDENTIFIER-GATE.json lists under "configGlobs". Each is
 # lowercased, kept at 5 characters or more, and matched on whole words, so a short name never matches
 # inside a longer word. Generic authors (noreply addresses, bots, Claude, GitHub) are ignored.
 #
@@ -492,7 +490,7 @@ esac
     # into ordinary words that block later commits.
     case "$id_mail_lc" in *@anthropic.com) continue ;; esac
     # The full name is one phrase, so an author called "Scratch Person" never blocks the word "person".
-    printf '%s\n' "$id_name_lc" | tr -c 'a-z0-9\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $//'
+    printf '%s\n' "$id_name_lc" | LC_ALL=C tr '[:punct:]' ' ' | tr -s ' ' | sed 's/^ //; s/ $//'
     case "$id_mail_lc" in
       *@users.noreply.github.com) printf '%s\n' "${id_mail_lc%@*}" | sed 's/^[0-9]*+//' ;;
       *@noreply.github.com) ;;
@@ -504,7 +502,7 @@ esac
     git ls-files | while IFS= read -r id_cfg; do
       case "$id_cfg" in $id_glob) git show ":$id_cfg" 2>/dev/null ;; esac
     done
-  done | tr 'A-Z' 'a-z' \
+  done | tr 'A-Z' 'a-z' | tr ',{}' '\n\n\n' \
     | sed -nE 's/.*"[^"]*(account|shop|store|handle|username|owner|brand|seller)[^"]*"[[:space:]]*:[[:space:]]*"([^"]+)".*/\2/p'
 } | awk 'length($0) >= 5' \
   | grep -vxE 'claude|github|anthropic|noreply|no-reply|copilot|dependabot|renovate|root|user|users|test|tests|admin|unknown|none|null|example|local|localhost|bot|runner' \
@@ -536,6 +534,7 @@ for number, line in enumerate(sys.stdin, 1):
         print(f"{number}:{match.group(0)}")'
   ID_LOCAL="$(gate_list docs/IDENTIFIER-GATE.json localData)"
   ID_HITS=0
+  command -v python3 >/dev/null 2>&1 || { echo "  BLOCKED: python3 is needed to check owner identifiers."; exit 1; }
   while IFS= read -r id_file; do
     [ -n "$id_file" ] || continue
     case "$id_file" in
@@ -547,7 +546,7 @@ for number, line in enumerate(sys.stdin, 1):
     id_found="$(staged_content "$id_file" 2>/dev/null | grep -iwF -f "$ID_LIST" >/dev/null && staged_content "$id_file" 2>/dev/null | python3 -c "$ID_MATCHER" "$ID_LIST" "$ID_SELF" || true)"
     if [ -n "$id_found" ]; then
       while IFS= read -r id_line; do
-        echo "  $id_file:${id_line%%:*} names the owner: ${id_line#*:}"
+        echo "  $id_file:${id_line%%:*} names the owner"
       done <<< "$id_found"
       ID_HITS=$((ID_HITS + 1))
     fi

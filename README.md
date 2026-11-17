@@ -4,7 +4,7 @@ A local, single-file tool that converts HTML slides into editable PowerPoint dec
 
 HTML is often the fastest way to build a precise slide design. The problem comes when that design needs to become a PowerPoint deck: exporting the slide as an image preserves the look but loses the structure. Text can no longer be edited, and individual visual elements can no longer be moved or resized.
 
-Slides Converter preserves that structure. Text becomes real, editable PowerPoint text boxes. Images, gradients, and other visual elements become their own movable, resizable layers.
+Slides Converter preserves that structure where it can. Text becomes real, editable PowerPoint text boxes. On a simple slide, solid-color boxes and images become their own movable, resizable layers. A rich slide with gradients or stacked styled boxes becomes one locked picture of the artwork with the text boxes on top, so the text stays editable and the artwork moves as one piece.
 
 The browser is only the conversion step. The actual editing happens in PowerPoint, where the converted deck can be changed like any other native presentation.
 
@@ -14,12 +14,7 @@ It is built for anyone who designs slides in HTML and needs the result as a nati
 
 Open `slideeditor.html` in any modern browser.
 
-It runs entirely locally:
-
-* No installation
-* No server
-* No build step
-* No network connection
+Opening the file needs no installation, no server and no build step. Conversion runs in the browser on your computer, and nothing is uploaded. The one network request is a fetch of a remote stylesheet when the imported HTML links to one that is not supplied as a file. Pasting self-contained HTML or choosing the `.css` file keeps the conversion fully offline.
 
 Import a slide in any of three ways:
 
@@ -42,7 +37,7 @@ Export the result as:
 
 The converter can preserve editability because HTML already describes a slide as separate elements.
 
-A positioned HTML element becomes its own PowerPoint layer. Text inside that element becomes its own editable text box. Images, gradients, and shapes are converted into their corresponding PowerPoint layers.
+A positioned HTML element becomes its own PowerPoint layer. Text inside that element becomes its own editable text box. Images and solid shapes convert to their own layers. Gradients and stacked styled boxes are flattened into one locked artwork picture behind the text.
 
 A PNG or JPG has no underlying structure to preserve. It therefore imports as one picture layer.
 
@@ -50,7 +45,7 @@ The converter does not attempt to extract text from images with OCR. Reliable OC
 
 ## How it is built
 
-The deliverable is one HTML file that runs entirely offline.
+The deliverable is one HTML file that runs on your computer with no server.
 
 The source is kept separate for development:
 
@@ -76,7 +71,7 @@ slideeditor.html
 
 There are zero runtime dependencies and no `npm install` required to use the deliverable.
 
-After changing the engine or shell, rebuild it with:
+Rebuilding needs Node 22.13 or later, because the bundler uses Node's built-in type stripping. After changing the engine or shell, rebuild it with:
 
 ```bash
 node scripts/build-bundle.mjs

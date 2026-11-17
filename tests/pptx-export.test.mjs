@@ -5,32 +5,39 @@ import { loadEngine } from './load-engine.mjs'
 
 const E = loadEngine()
 
-function slideXml(content, style = {}, x = 40, y = 40, background) {
+function unzip(ab) {
+  const buf = Buffer.from(ab)
+  const parts = {}
+  let eocd = buf.length - 22
+  while (buf.readUInt32LE(eocd) !== 0x06054b50) eocd--
+  const count = buf.readUInt16LE(eocd + 10)
+  let p = buf.readUInt32LE(eocd + 16)
+  for (let i = 0; i < count; i++) {
+    const method = buf.readUInt16LE(p + 10)
+    const size = buf.readUInt32LE(p + 20)
+    const nameLen = buf.readUInt16LE(p + 28)
+    const extraLen = buf.readUInt16LE(p + 30)
+    const commentLen = buf.readUInt16LE(p + 32)
+    const local = buf.readUInt32LE(p + 42)
+    const name = buf.toString('utf8', p + 46, p + 46 + nameLen)
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28)
+    const data = buf.subarray(start, start + size)
+    parts[name] = method === 8 ? inflateRawSync(data) : data
+    p += 46 + nameLen + extraLen + commentLen
+  }
+  return parts
+}
+
+function exportParts(content, style = {}, x = 40, y = 40, background) {
   const component = { id: 't1', type: 'text', content, x, y, width: 400, height: 60, locked: false, visible: true, sourceLabel: 'test', style }
   const document = E.createSlideDocument({ canvas: { width: 1280, height: 720, ...(background ? { background } : {}) }, components: [component] })
-  return E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Test', document }]).blob.arrayBuffer().then((ab) => {
-    const buf = Buffer.from(ab)
-    let eocd = buf.length - 22
-    while (buf.readUInt32LE(eocd) !== 0x06054b50) eocd--
-    const count = buf.readUInt16LE(eocd + 10)
-    let p = buf.readUInt32LE(eocd + 16)
-    for (let i = 0; i < count; i++) {
-      const method = buf.readUInt16LE(p + 10)
-      const size = buf.readUInt32LE(p + 20)
-      const nameLen = buf.readUInt16LE(p + 28)
-      const extraLen = buf.readUInt16LE(p + 30)
-      const commentLen = buf.readUInt16LE(p + 32)
-      const local = buf.readUInt32LE(p + 42)
-      const name = buf.toString('utf8', p + 46, p + 46 + nameLen)
-      if (name === 'ppt/slides/slide1.xml') {
-        const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28)
-        const data = buf.subarray(start, start + size)
-        return (method === 8 ? inflateRawSync(data) : data).toString('utf8')
-      }
-      p += 46 + nameLen + extraLen + commentLen
-    }
-    throw new Error('ppt/slides/slide1.xml missing from the export')
-  })
+  return E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Test', document }]).blob.arrayBuffer().then(unzip)
+}
+
+async function slideXml(content, style = {}, x = 40, y = 40, background) {
+  const parts = await exportParts(content, style, x, y, background)
+  assert.ok(parts['ppt/slides/slide1.xml'], 'ppt/slides/slide1.xml is in the export')
+  return parts['ppt/slides/slide1.xml'].toString('utf8')
 }
 
 const plain = await slideXml('Hello deck')
@@ -82,5 +89,13 @@ const dashed = await slideXml('Dashed', { borderStyle: 'dashed', borderWidth: 2,
 assert.ok(dashed.includes('prstDash val="dash"'), 'a dashed border writes dash')
 const dotted = await slideXml('Dotted', { borderStyle: 'dotted', borderWidth: 2, borderColor: '#000000' })
 assert.ok(dotted.includes('prstDash val="sysDot"'), 'a dotted border writes sysDot')
+
+// No part of the PPTX carries the maker's name, and neither does the HTML export.
+const parts = await exportParts('Hello')
+for (const [name, data] of Object.entries(parts)) {
+  assert.ok(!/oliver/i.test(data.toString('latin1')), name + ' carries no owner name')
+}
+const neutralHtml = E.convertSlideComponentsToHtml({ canvas: { width: 800, height: 400 }, components: [] })
+assert.ok(!/oliver/i.test(neutralHtml), 'the HTML export carries no owner name')
 
 console.log('pptx-export tests passed')

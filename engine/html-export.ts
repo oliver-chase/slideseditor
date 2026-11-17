@@ -146,13 +146,13 @@ export function convertSlideComponentsToHtml(input: {
     '<head>',
     '<meta charset="utf-8" />',
     '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-    '<title>Oliver Slide Export</title>',
+    '<title>Slide Export</title>',
     `<style>${buildPrintSafeStyles(canvas)}</style>`,
     '</head>',
     '<body>',
   ].join('\n')
   const rootOpen =
-    `<div class="slides-export-root"><div class="slide-canvas" data-slide-root="1" data-oliver-export-version="1" data-oliver-source="${escapeAttribute(source)}" data-oliver-slide-id="${escapeAttribute(slideId)}" data-oliver-revision="${escapeAttribute(revision)}" data-oliver-exported-at="${escapeAttribute(exportedAt)}" style="position:relative;width:${safeCanvasSize(canvas).width}px;height:${safeCanvasSize(canvas).height}px;overflow:hidden;${canvas.background ? `background:${escapeAttribute(canvas.background)};` : ''}">`
+    `<div class="slides-export-root"><div class="slide-canvas" data-slide-root="1" data-slides-export-version="1" data-slides-source="${escapeAttribute(source)}" data-slides-slide-id="${escapeAttribute(slideId)}" data-slides-revision="${escapeAttribute(revision)}" data-slides-exported-at="${escapeAttribute(exportedAt)}" style="position:relative;width:${safeCanvasSize(canvas).width}px;height:${safeCanvasSize(canvas).height}px;overflow:hidden;${canvas.background ? `background:${escapeAttribute(canvas.background)};` : ''}">`
   const body = components.filter((component) => component.visible !== false).map(componentToHtml).join('\n')
   const rootClose = '</div></div>'
   const footer = '</body></html>'

@@ -302,9 +302,9 @@
 
   // ---- Import ----
   async function importFromHtml(html, cssFiles) {
-    if (!html || !html.trim()) { toast('Nothing to import — the HTML was empty.'); return; }
+    if (!html || !html.trim()) { toast('Nothing to import — the HTML was empty.'); return false; }
     const inputCheck = E.validateHtmlImportInput(html);
-    if (inputCheck) { toast('Import failed: ' + inputCheck.message); return; }
+    if (inputCheck) { toast('Import failed: ' + inputCheck.message); return false; }
     try {
       let effectiveHtml = html;
       if (cssFiles && cssFiles.length) {
@@ -325,9 +325,11 @@
       const warnings = result.warnings || [];
       if (parseCheck) toast('Converted, but: ' + parseCheck.message, warnings);
       else toast('Converted ' + state.components.length + ' layer(s).', warnings);
+      return true;
     } catch (err) {
       const info = E.classifyImportError(err);
       toast('Import failed: ' + info.message);
+      return false;
     }
   }
 
@@ -347,7 +349,12 @@
       img.src = dataUrl;
     });
   }
+  const MAX_IMAGE_BYTES = 50 * 1000 * 1000; // same 50 MB limit the HTML path enforces
   async function importImageFile(file) {
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast('Import failed: the image is too large. Maximum supported size is ' + (MAX_IMAGE_BYTES / 1000000) + ' MB.');
+      return;
+    }
     const dataUrl = await readAsDataUrl(file);
     const nat = await naturalSize(dataUrl);
     // A raster defines its own size; import at native (fixed presets remain opt-in).
@@ -438,9 +445,11 @@
   $('#pasteCancelBtn').addEventListener('click', () => $('#importModal').classList.remove('show'));
   $('#pasteImportBtn').addEventListener('click', async () => {
     const html = $('#pasteArea').value;
-    $('#importModal').classList.remove('show');
-    await importFromHtml(html);
-    $('#pasteArea').value = '';
+    // Keep the dialog and the pasted text when the import fails, so nothing typed is lost.
+    if (await importFromHtml(html)) {
+      $('#importModal').classList.remove('show');
+      $('#pasteArea').value = '';
+    }
   });
   $('#chooseFilesBtn').addEventListener('click', () => $('#fileInput').click());
   $('#fileInput').addEventListener('change', async (e) => {

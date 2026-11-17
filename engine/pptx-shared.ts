@@ -81,7 +81,7 @@ function decodeReferences(text: string): string {
 }
 
 export function toPlainText(html: string): string {
-  // A newline in the source is a space when rendered, so only br and the end of a p or div break a line.
+  // A newline in the source is a space when rendered, so only a br and the start or end of a block element (p, div, headings, list items and similar) break a line.
   const withLineBreaks = html
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/[ \t\r\n\f]+/g, ' ')
@@ -147,7 +147,7 @@ function styleOfTag(tag: string, attributes: string, inherited: RunStyle): RunSt
 }
 
 // Split inline HTML into lines of runs that carry bold, italic, underline and color. Line breaks follow
-// toPlainText: a br and the end of a p or div start a new line.
+// toPlainText: a br and the start or end of a block element (p, div, headings, list items and similar) start a new line.
 export function toTextLines(rawHtml: string): TextRun[][] {
   const html = rawHtml.replace(/<!--[\s\S]*?-->/g, '').replace(/[ \t\r\n\f]+/g, ' ')
   const lines: TextRun[][] = [[]]

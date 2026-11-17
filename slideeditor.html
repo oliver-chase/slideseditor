@@ -435,20 +435,15 @@ async function fetchLimited(url        , maxBytes        , timeoutMs        )   
     if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return null
     const pieces               = []
     let total = 0
-    if (response.body) {
-      const reader = response.body.getReader()
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        total += value.byteLength
-        if (total > maxBytes) { controller.abort(); return null }
-        pieces.push(value)
-      }
-    } else {
-      const whole = new Uint8Array(await response.arrayBuffer())
-      if (whole.byteLength > maxBytes) return null
-      pieces.push(whole)
-      total = whole.byteLength
+    // Without a readable body the size cannot be limited, so the response is ignored.
+    if (!response.body) return null
+    const reader = response.body.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > maxBytes) { controller.abort(); return null }
+      pieces.push(value)
     }
     const bytes = new Uint8Array(total)
     let offset = 0
@@ -3120,7 +3115,7 @@ function decodeReferences(text        )         {
 }
 
 function toPlainText(html        )         {
-  // A newline in the source is a space when rendered, so only br and the end of a p or div break a line.
+  // A newline in the source is a space when rendered, so only a br and the start or end of a block element (p, div, headings, list items and similar) break a line.
   const withLineBreaks = html
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/[ \t\r\n\f]+/g, ' ')
@@ -3186,7 +3181,7 @@ function styleOfTag(tag        , attributes        , inherited          )       
 }
 
 // Split inline HTML into lines of runs that carry bold, italic, underline and color. Line breaks follow
-// toPlainText: a br and the end of a p or div start a new line.
+// toPlainText: a br and the start or end of a block element (p, div, headings, list items and similar) start a new line.
 function toTextLines(rawHtml        )              {
   const html = rawHtml.replace(/<!--[\s\S]*?-->/g, '').replace(/[ \t\r\n\f]+/g, ' ')
   const lines              = [[]]

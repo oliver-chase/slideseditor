@@ -41,20 +41,15 @@ export async function fetchLimited(url: string, maxBytes: number, timeoutMs: num
     if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return null
     const pieces: Uint8Array[] = []
     let total = 0
-    if (response.body) {
-      const reader = response.body.getReader()
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        total += value.byteLength
-        if (total > maxBytes) { controller.abort(); return null }
-        pieces.push(value)
-      }
-    } else {
-      const whole = new Uint8Array(await response.arrayBuffer())
-      if (whole.byteLength > maxBytes) return null
-      pieces.push(whole)
-      total = whole.byteLength
+    // Without a readable body the size cannot be limited, so the response is ignored.
+    if (!response.body) return null
+    const reader = response.body.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > maxBytes) { controller.abort(); return null }
+      pieces.push(value)
     }
     const bytes = new Uint8Array(total)
     let offset = 0
@@ -339,7 +334,7 @@ const REMOTE_ASSET_MAX_BYTES = 5_000_000
 const REMOTE_ASSET_TIMEOUT_MS = 4000
 
 // Each address is fetched once per import, with its own timeout and the byte limit.
-const remoteAssetCache = new Map<string, Promise<string | null>>()
+export const remoteAssetCache = new Map<string, Promise<string | null>>()
 
 function fetchAsDataUrl(url: string): Promise<string | null> {
   const cached = remoteAssetCache.get(url)

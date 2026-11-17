@@ -1,6 +1,6 @@
 import type { SlideComponent } from './types'
 import type { RasterCandidates, RenderSnapshot } from './html-import-shared'
-import { inlineRemoteFonts, inlineRemoteImages, parseRuleDeclarations } from './html-import-css'
+import { inlineRemoteFonts, inlineRemoteImages, parseRuleDeclarations, remoteAssetCache } from './html-import-css'
 import { hasOwnTextNode, isVisibleEl, measureNodeRect, readComputedStyleSafe } from './html-import-render'
 import { extractStyle, hasRenderedBorder } from './html-import-values'
 import { asCanonicalDimension, asCanonicalDimensionOptional } from './html-import-position'

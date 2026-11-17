@@ -336,7 +336,7 @@ async function inlineStyleBlock(
   index: number,
   doc: Document,
   warnings: string[],
-): Promise<{ chunk: InlinedStyleChunk | null; unresolved: number }> {
+): Promise<InlinedStyleChunk | null> {
   const { cssText: inlinedText, importedCount, unresolvedCount } = await parseCssImportUrls(
     node.textContent || '',
     documentBaseUrl(doc),
@@ -351,7 +351,7 @@ async function inlineStyleBlock(
       'Could not inline ' + plural(unresolvedCount, 'inline @import stylesheet') + '; source fallback may differ from original.',
     )
   }
-  return { chunk, unresolved: unresolvedCount }
+  return chunk
 }
 
 // A fetched <link> stylesheet: resolve its nested @import rules against the link's own URL.
@@ -361,7 +361,7 @@ async function inlineLinkedStylesheet(
   fetchedText: string,
   doc: Document,
   warnings: string[],
-): Promise<{ chunk: InlinedStyleChunk; unresolved: number }> {
+): Promise<InlinedStyleChunk> {
   const linkedBase = node.getAttribute('href')
     ? makeSafeResolvedUrl(node.getAttribute('href') || '', documentBaseUrl(doc))
     || doc.baseURI
@@ -382,7 +382,7 @@ async function inlineLinkedStylesheet(
       'Could not inline ' + plural(unresolvedCount, 'nested @import stylesheet') + '; nested fallback may differ from source.',
     )
   }
-  return { chunk, unresolved: unresolvedCount }
+  return chunk
 }
 
 async function inlineExternalStylesheets(doc: Document, warnings: string[]): Promise<InlinedStyleChunk[]> {
@@ -414,17 +414,14 @@ async function inlineExternalStylesheets(doc: Document, warnings: string[]): Pro
     const node = styleNodes[index]
     if (node.tagName.toLowerCase() === 'style') {
       const block = await inlineStyleBlock(node, index, doc, warnings)
-      if (block.chunk) inlinedStyles.push(block.chunk)
-      unresolvedCount += block.unresolved
+      if (block) inlinedStyles.push(block)
       continue
     }
 
     const result = fetched[linkResultCursor]
     linkResultCursor += 1
     if (result?.status === 'fulfilled' && result.value) {
-      const linked = await inlineLinkedStylesheet(node, index, result.value, doc, warnings)
-      inlinedStyles.push(linked.chunk)
-      unresolvedCount += linked.unresolved
+      inlinedStyles.push(await inlineLinkedStylesheet(node, index, result.value, doc, warnings))
       continue
     }
 
@@ -440,9 +437,35 @@ async function inlineExternalStylesheets(doc: Document, warnings: string[]): Pro
   return inlinedStyles.sort((a, b) => a.order - b.order)
 }
 
+// Split on semicolons that sit outside quotes and parentheses, so url("data:...;base64,...") stays whole.
+function splitDeclarations(raw: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let quote = ''
+  let start = 0
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i]
+    if (quote) {
+      if (ch === '\\') i += 1
+      else if (ch === quote) quote = ''
+    } else if (ch === '"' || ch === "'") {
+      quote = ch
+    } else if (ch === '(') {
+      depth += 1
+    } else if (ch === ')') {
+      depth = Math.max(0, depth - 1)
+    } else if (ch === ';' && depth === 0) {
+      parts.push(raw.slice(start, i))
+      start = i + 1
+    }
+  }
+  parts.push(raw.slice(start))
+  return parts
+}
+
 function parseRuleDeclarations(rawDeclarations: string): Record<string, string> {
   const declarations: Record<string, string> = {}
-  const declarationList = rawDeclarations.split(';')
+  const declarationList = splitDeclarations(rawDeclarations)
   for (const declaration of declarationList) {
     const segment = declaration.trim()
     if (!segment) continue
@@ -531,7 +554,21 @@ function buildPseudoContent(styleMap: Record<string, string>, pseudoNodeLabel: s
     return `<img alt="${pseudoNodeLabel}" src="${parsedUrl}" />`
   }
 
-  return escapeHtmlText(stripWrappingQuotes(rawContent))
+  if (/^(attr|counters?)\(/i.test(rawContent)) {
+    warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content "' + rawContent + '" is not supported; ignored.')
+    return ''
+  }
+
+  return escapeHtmlText(decodeCssEscapes(stripWrappingQuotes(rawContent)))
+}
+
+// "\e900" and "\201C " are CSS escapes for one character each; a backslash before any other character yields that character.
+function decodeCssEscapes(text: string): string {
+  return text.replace(/\\([0-9a-fA-F]{1,6})\s?|\\([\s\S])/g, (_match, hex: string | undefined, literal: string | undefined) => {
+    if (literal !== undefined) return literal
+    const codePoint = Number.parseInt(hex as string, 16)
+    return codePoint === 0 || codePoint > 0x10ffff ? '\ufffd' : String.fromCodePoint(codePoint)
+  })
 }
 
 function computePseudoOffset(
@@ -2065,11 +2102,11 @@ function selectImportNodes(allNodes: HTMLElement[], renderSnapshot: RenderSnapsh
   const renderNodeOf = (node: HTMLElement) => renderSnapshot.nodesById.get(node.getAttribute('data-import-node-id') || '') || node
   const absoluteNodes = allNodes.filter((node) => shouldImportNode(node, readComputedStyleSafe(renderNodeOf(node))))
   const fallbackNodes = Array.from(root.children).filter((node): node is HTMLElement => node instanceof HTMLElement)
+  if (absoluteNodes.length > 0) return { absoluteNodes, flowNodes: [], nodes: absoluteNodes, importMode: 'absolute' }
   const flowNodes = allNodes.filter((node) => {
     const renderNode = renderNodeOf(node)
     return shouldImportFlowNode(node, readComputedStyleSafe(renderNode), measureNodeRect(renderNode, renderRoot))
   })
-  if (absoluteNodes.length > 0) return { absoluteNodes, flowNodes, nodes: absoluteNodes, importMode: 'absolute' }
   if (flowNodes.length > 0) return { absoluteNodes, flowNodes, nodes: flowNodes, importMode: 'flow' }
   if (fallbackNodes.length > 0) return { absoluteNodes, flowNodes, nodes: fallbackNodes, importMode: 'fallback' }
   return { absoluteNodes, flowNodes, nodes: [root], importMode: 'root-fallback' }

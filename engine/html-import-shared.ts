@@ -40,6 +40,9 @@ export const FLOW_MEDIA_TAGS = new Set(['img', 'picture', 'svg', 'canvas', 'vide
 
 export const CSS_IMPORT_MAX_RECURSION_DEPTH = 3
 
+// A remote stylesheet larger than this is ignored, so a slide cannot make the import download a large file.
+export const REMOTE_STYLESHEET_MAX_BYTES = 1_000_000
+
 export const IMPORT_STYLE_PROPERTIES = [
   'color',
   'background-color',

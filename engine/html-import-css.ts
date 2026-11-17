@@ -1,4 +1,4 @@
-import { CSS_IMPORT_MAX_RECURSION_DEPTH } from './html-import-shared'
+import { CSS_IMPORT_MAX_RECURSION_DEPTH, REMOTE_STYLESHEET_MAX_BYTES } from './html-import-shared'
 import type { CssImportResult, InlinedStyleChunk } from './html-import-shared'
 
 function makeSafeResolvedUrl(rawUrl: string, baseUrl: string): string | null {
@@ -35,7 +35,10 @@ async function fetchWithTimeout(url: string, timeoutMs = 1500): Promise<string |
     })
 
     if (!response.ok) return null
-    return await response.text()
+    const declaredLength = Number.parseInt(response.headers.get('content-length') || '', 10)
+    if (Number.isFinite(declaredLength) && declaredLength > REMOTE_STYLESHEET_MAX_BYTES) return null
+    const text = await response.text()
+    return text.length > REMOTE_STYLESHEET_MAX_BYTES ? null : text
   } catch {
     return null
   } finally {

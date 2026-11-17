@@ -14,7 +14,7 @@ It is built for anyone who designs slides in HTML and needs the result as a nati
 
 Open `slideeditor.html` in any modern browser.
 
-Opening the file needs no installation, no server and no build step. Conversion runs in the browser on your computer, and nothing is uploaded. The browser requests anything the imported slide names at a web address: a linked stylesheet, an `@import` file, an image or a font. Pasting self-contained HTML, with its stylesheet and images embedded or supplied as files, keeps the conversion fully offline.
+Opening the file needs no installation, no server and no build step. Conversion runs in the browser on your computer, and nothing is uploaded. The browser requests anything the imported slide names at a web address: a linked stylesheet, an `@import` file, an image or a font. A stylesheet larger than 1 MB or slower than 1.5 seconds is ignored. Pasting self-contained HTML, with its stylesheet and images embedded or supplied as files, keeps the conversion fully offline.
 
 Import a slide in any of three ways:
 

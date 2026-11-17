@@ -355,6 +355,9 @@ const FLOW_MEDIA_TAGS = new Set(['img', 'picture', 'svg', 'canvas', 'video'])
 
 const CSS_IMPORT_MAX_RECURSION_DEPTH = 3
 
+// A remote stylesheet larger than this is ignored, so a slide cannot make the import download a large file.
+const REMOTE_STYLESHEET_MAX_BYTES = 1_000_000
+
 const IMPORT_STYLE_PROPERTIES = [
   'color',
   'background-color',
@@ -424,7 +427,10 @@ async function fetchWithTimeout(url        , timeoutMs = 1500)                  
     })
 
     if (!response.ok) return null
-    return await response.text()
+    const declaredLength = Number.parseInt(response.headers.get('content-length') || '', 10)
+    if (Number.isFinite(declaredLength) && declaredLength > REMOTE_STYLESHEET_MAX_BYTES) return null
+    const text = await response.text()
+    return text.length > REMOTE_STYLESHEET_MAX_BYTES ? null : text
   } catch {
     return null
   } finally {

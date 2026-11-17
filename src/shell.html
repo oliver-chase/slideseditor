@@ -395,7 +395,7 @@
     state.components = [{
       id: 'image-1', type: 'logo', sourceLabel: file.name,
       x: x, y: y, width: w, height: h,
-      content: '<img src="' + dataUrl + '" />', style: {}, locked: false, visible: true,
+      content: '<img alt="' + escapeHtml(file.name) + '" src="' + dataUrl + '" />', style: {}, locked: false, visible: true,
     }];
     state.highlightId = null;
     renderPreview();

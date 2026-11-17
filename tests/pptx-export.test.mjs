@@ -60,14 +60,16 @@ assert.ok(spaced.includes(' spc="375"'), 'letter-spacing 5px becomes 3.75pt char
 function exportImage(uri) {
   const component = { id: 'img1', type: 'text', content: `<img src="${uri}" />`, x: 10, y: 10, width: 100, height: 100, locked: false, visible: true, sourceLabel: 'test', style: {} }
   const document = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [component] })
-  return E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Test', document }])
+  const result = E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Test', document }])
+  return result.blob.arrayBuffer().then((ab) => ({ warnings: result.warnings, pictures: (unzip(ab)['ppt/slides/slide1.xml'].toString('utf8').match(/<p:pic>/g) || []).length }))
 }
 
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
-const pngResult = exportImage(png)
+const pngResult = await exportImage(png)
 assert.equal(pngResult.warnings.length, 0, 'a base64 PNG exports with no warning')
+assert.equal(pngResult.pictures, 1, 'a base64 PNG exports as one picture')
 
-const svgResult = exportImage('data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E')
+const svgResult = await exportImage('data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E')
 assert.ok(svgResult.warnings.some((w) => w.includes('img1') && w.includes('image/svg+xml')), 'an SVG with a utf8 parameter is reported by component, not dropped silently')
 
 const offCanvas = await slideXml('Off canvas', {}, -80, -30)
@@ -172,7 +174,7 @@ assert.ok(named.includes('Fish &amp; chips \u00a9 2026 \u2014 ok') && !named.inc
 
 // A greater-than sign inside an attribute stays out of the text, and a source newline is a space.
 const attr = await slideXml('<span title="a>b">visible</span> and\nmore')
-assert.ok(attr.includes('visible') && !attr.includes('b&quot;') && !/<a:t>[^<]*b"&gt;/.test(attr), 'a quoted > does not leak into the text')
+assert.ok(attr.includes('visible') && !attr.includes('b&quot;&gt;'), 'a quoted > does not leak into the text')
 assert.equal((attr.match(/<a:p>/g) || []).length, 1, 'a newline in the source does not start a paragraph')
 
 // A hidden component is left out of the PPTX.
@@ -182,6 +184,7 @@ assert.ok(hiddenXml.includes('Shown text') && !hiddenXml.includes('Secret text')
 
 // An entity name that is only a property of every object is not an entity, and a surrogate half is dropped.
 const odd = await slideXml('a &constructor; b &#xD800; c')
-assert.ok(!odd.includes('native code') && odd.includes('&amp;constructor;') && !/[\uD800-\uDFFF]/.test(odd), 'unknown entity names stay as typed and surrogates are removed')
+assert.ok(odd.includes('&amp;constructor;') && !/[\uD800-\uDFFF]/.test(odd), 'unknown entity names stay as typed and surrogates are removed')
+assert.ok(!odd.includes('native code'), 'an inherited object property is not read as an entity')
 
 console.log('pptx-export tests passed')

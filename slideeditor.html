@@ -727,6 +727,53 @@ function parseRuleDeclarations(rawDeclarations        )                         
   return declarations
 }
 
+// The artwork is drawn through an SVG image, which cannot load web addresses. Images and fonts that the
+// slide names at a web address are fetched first and embedded as data URIs, up to a size limit each.
+const REMOTE_ASSET_MAX_BYTES = 5_000_000
+const REMOTE_ASSET_TIMEOUT_MS = 4000
+
+// Each address is fetched once per import, with its own timeout and the byte limit.
+const remoteAssetCache = new Map                                ()
+
+function fetchAsDataUrl(url        )                         {
+  const cached = remoteAssetCache.get(url)
+  if (cached) return cached
+  const pending = (async ()                         => {
+    const result = await fetchLimited(url, REMOTE_ASSET_MAX_BYTES, REMOTE_ASSET_TIMEOUT_MS)
+    if (!result) return null
+    return await new Promise               ((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(new Blob([result.bytes], { type: result.type }))
+    })
+  })()
+  remoteAssetCache.set(url, pending)
+  return pending
+}
+
+async function inlineRemoteImages(root             )                {
+  await Promise.all(Array.from(root.querySelectorAll('img')).map(async (img) => {
+    const src = img.getAttribute('src') || ''
+    if (!/^https?:/i.test(src)) return
+    const data = await fetchAsDataUrl(src)
+    if (data) img.setAttribute('src', data)
+  }))
+}
+
+async function inlineRemoteFonts(cssText        )                  {
+  const urls = new Set        ()
+  for (const block of cssText.match(/@font-face\s*\{[^}]*\}/gi) || []) {
+    for (const match of block.matchAll(/url\(\s*["']?(https?:[^"')]+)["']?\s*\)/gi)) urls.add(match[1])
+  }
+  let result = cssText
+  for (const url of urls) {
+    const data = await fetchAsDataUrl(url)
+    if (data) result = result.split(url).join(data)
+  }
+  return result
+}
+
 // ===== html-import-render.ts =====
 function normalizeImportedHtmlMarkup(html        , warnings          )         {
   const source = html.trim()
@@ -1666,14 +1713,19 @@ function buildSanitizedContentNode(node             )              {
   return clone
 }
 
-function inferType(node             )                     {
-  // getAttribute reads the class of an HTML and an SVG element alike. Class names match as whole
-  // words, split on spaces, hyphens, underscores and camelCase, so "status" is not "stat".
-  const classWords = (node.getAttribute('class') || '')
+// The words of an element's class, split on spaces, hyphens, underscores and camelCase, so class names
+// match as whole words. getAttribute reads the class of an HTML and an SVG element alike.
+function classWordsOf(node             )           {
+  return (node.getAttribute('class') || '')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .split(/[\s_-]+/)
     .filter(Boolean)
+}
+
+function inferType(node             )                     {
+  // Class names match as whole words, so "status" is not "stat".
+  const classWords = classWordsOf(node)
   const hasClass = (...words          ) => words.some((word) => classWords.includes(word))
   const text = (node.textContent || '').trim().toLowerCase()
   const tag = node.tagName.toLowerCase()
@@ -1722,8 +1774,7 @@ function getCanvasRoot(doc          )                     {
       const height = parsePositivePx(styleMap.height ?? candidate.getAttribute('height'))
       if (!width || !height) return { candidate, score: 0 }
 
-      // Class names match as whole words, split on spaces, hyphens, underscores and camelCase.
-      const classWords = (candidate.getAttribute('class') || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[\s_-]+/)
+      const classWords = classWordsOf(candidate)
       const isSemanticSlideMarker = classWords.some((word) => ['slide', 'slides', 'deck', 'canvas', 'presentation', 'frame', 'artboard'].includes(word))
       if (!isSemanticSlideMarker) return { candidate, score: 0 }
 
@@ -2232,53 +2283,6 @@ async function rasterizeElementInline(el             , win        , scale       
   wrap.appendChild(clone)
   const inner = new XMLSerializer().serializeToString(wrap)
   return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)
-}
-
-// The artwork is drawn through an SVG image, which cannot load web addresses. Images and fonts that the
-// slide names at a web address are fetched first and embedded as data URIs, up to a size limit each.
-const REMOTE_ASSET_MAX_BYTES = 5_000_000
-const REMOTE_ASSET_TIMEOUT_MS = 4000
-
-// Each address is fetched once per import, with its own timeout and the byte limit.
-const remoteAssetCache = new Map                                ()
-
-function fetchAsDataUrl(url        )                         {
-  const cached = remoteAssetCache.get(url)
-  if (cached) return cached
-  const pending = (async ()                         => {
-    const result = await fetchLimited(url, REMOTE_ASSET_MAX_BYTES, REMOTE_ASSET_TIMEOUT_MS)
-    if (!result) return null
-    return await new Promise               ((resolve) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
-      reader.onerror = () => resolve(null)
-      reader.readAsDataURL(new Blob([result.bytes], { type: result.type }))
-    })
-  })()
-  remoteAssetCache.set(url, pending)
-  return pending
-}
-
-async function inlineRemoteImages(root             )                {
-  await Promise.all(Array.from(root.querySelectorAll('img')).map(async (img) => {
-    const src = img.getAttribute('src') || ''
-    if (!/^https?:/i.test(src)) return
-    const data = await fetchAsDataUrl(src)
-    if (data) img.setAttribute('src', data)
-  }))
-}
-
-async function inlineRemoteFonts(cssText        )                  {
-  const urls = new Set        ()
-  for (const block of cssText.match(/@font-face\s*\{[^}]*\}/gi) || []) {
-    for (const match of block.matchAll(/url\(\s*["']?(https?:[^"')]+)["']?\s*\)/gi)) urls.add(match[1])
-  }
-  let result = cssText
-  for (const url of urls) {
-    const data = await fetchAsDataUrl(url)
-    if (data) result = result.split(url).join(data)
-  }
-  return result
 }
 
 // Render the whole slide in context (keeps the page <style>, so boxes/meters/gradients
@@ -3066,13 +3070,14 @@ const MIN_SLIDE_AXIS_EMU = 914_400
  
 
 // Map the canvas to the slide at true 96dpi (1px = 9525 EMU), shrinking the scale
-// uniformly only if a huge canvas would exceed PowerPoint's 56in axis limit, and growing it
-// if the short side would fall under PowerPoint's 1in minimum. The aspect ratio is always preserved.
+// uniformly if a huge canvas would exceed PowerPoint's 56in axis limit, and growing it if the
+// short side would fall under PowerPoint's 1in minimum. The aspect ratio is always preserved, so a
+// canvas more than 56 times longer than wide cannot meet both limits, and the 56in limit wins.
 function computeSlideEmu(canvasWidth        , canvasHeight        )           {
   const w = Math.max(1, canvasWidth || 1920)
   const h = Math.max(1, canvasHeight || 1080)
   const fitted = Math.min(EMU_PER_PX, MAX_SLIDE_AXIS_EMU / Math.max(w, h))
-  const emuPerPx = Math.max(fitted, MIN_SLIDE_AXIS_EMU / Math.min(w, h))
+  const emuPerPx = Math.min(Math.max(fitted, MIN_SLIDE_AXIS_EMU / Math.min(w, h)), MAX_SLIDE_AXIS_EMU / Math.max(w, h))
   return { w: Math.round(w * emuPerPx), h: Math.round(h * emuPerPx), emuPerPx }
 }
 
@@ -3142,19 +3147,15 @@ function clamp(value        , min        , max        )         {
   return Math.min(max, Math.max(min, value))
 }
 
-                          
-              
+                    
                
                  
                     
                 
  
 
-                    
-               
-                 
-                    
-                
+                                           
+              
  
 
 // Elements with no closing tag. They carry no text, so they never change the style of what follows.
@@ -4532,7 +4533,7 @@ async function inlineCompanionStylesheets(
     state.components = [{
       id: 'image-1', type: 'logo', sourceLabel: file.name,
       x: x, y: y, width: w, height: h,
-      content: '<img src="' + dataUrl + '" />', style: {}, locked: false, visible: true,
+      content: '<img alt="' + escapeHtml(file.name) + '" src="' + dataUrl + '" />', style: {}, locked: false, visible: true,
     }];
     state.highlightId = null;
     renderPreview();

@@ -113,14 +113,19 @@ export function buildSanitizedContentNode(node: HTMLElement): HTMLElement {
   return clone
 }
 
-export function inferType(node: HTMLElement): SlideComponentType {
-  // getAttribute reads the class of an HTML and an SVG element alike. Class names match as whole
-  // words, split on spaces, hyphens, underscores and camelCase, so "status" is not "stat".
-  const classWords = (node.getAttribute('class') || '')
+// The words of an element's class, split on spaces, hyphens, underscores and camelCase, so class names
+// match as whole words. getAttribute reads the class of an HTML and an SVG element alike.
+function classWordsOf(node: HTMLElement): string[] {
+  return (node.getAttribute('class') || '')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .split(/[\s_-]+/)
     .filter(Boolean)
+}
+
+export function inferType(node: HTMLElement): SlideComponentType {
+  // Class names match as whole words, so "status" is not "stat".
+  const classWords = classWordsOf(node)
   const hasClass = (...words: string[]) => words.some((word) => classWords.includes(word))
   const text = (node.textContent || '').trim().toLowerCase()
   const tag = node.tagName.toLowerCase()
@@ -169,8 +174,7 @@ export function getCanvasRoot(doc: Document): HTMLElement | null {
       const height = parsePositivePx(styleMap.height ?? candidate.getAttribute('height'))
       if (!width || !height) return { candidate, score: 0 }
 
-      // Class names match as whole words, split on spaces, hyphens, underscores and camelCase.
-      const classWords = (candidate.getAttribute('class') || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[\s_-]+/)
+      const classWords = classWordsOf(candidate)
       const isSemanticSlideMarker = classWords.some((word) => ['slide', 'slides', 'deck', 'canvas', 'presentation', 'frame', 'artboard'].includes(word))
       if (!isSemanticSlideMarker) return { candidate, score: 0 }
 

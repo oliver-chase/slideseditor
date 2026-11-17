@@ -31,13 +31,14 @@ export interface SlideEmu {
 }
 
 // Map the canvas to the slide at true 96dpi (1px = 9525 EMU), shrinking the scale
-// uniformly only if a huge canvas would exceed PowerPoint's 56in axis limit, and growing it
-// if the short side would fall under PowerPoint's 1in minimum. The aspect ratio is always preserved.
+// uniformly if a huge canvas would exceed PowerPoint's 56in axis limit, and growing it if the
+// short side would fall under PowerPoint's 1in minimum. The aspect ratio is always preserved, so a
+// canvas more than 56 times longer than wide cannot meet both limits, and the 56in limit wins.
 export function computeSlideEmu(canvasWidth: number, canvasHeight: number): SlideEmu {
   const w = Math.max(1, canvasWidth || 1920)
   const h = Math.max(1, canvasHeight || 1080)
   const fitted = Math.min(EMU_PER_PX, MAX_SLIDE_AXIS_EMU / Math.max(w, h))
-  const emuPerPx = Math.max(fitted, MIN_SLIDE_AXIS_EMU / Math.min(w, h))
+  const emuPerPx = Math.min(Math.max(fitted, MIN_SLIDE_AXIS_EMU / Math.min(w, h)), MAX_SLIDE_AXIS_EMU / Math.max(w, h))
   return { w: Math.round(w * emuPerPx), h: Math.round(h * emuPerPx), emuPerPx }
 }
 
@@ -107,19 +108,15 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-export interface TextRun {
-  text: string
+interface RunStyle {
   bold: boolean
   italic: boolean
   underline: boolean
   color?: string
 }
 
-interface RunStyle {
-  bold: boolean
-  italic: boolean
-  underline: boolean
-  color?: string
+export interface TextRun extends RunStyle {
+  text: string
 }
 
 // Elements with no closing tag. They carry no text, so they never change the style of what follows.

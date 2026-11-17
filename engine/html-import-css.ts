@@ -332,3 +332,50 @@ export function parseRuleDeclarations(rawDeclarations: string): Record<string, s
   }
   return declarations
 }
+
+// The artwork is drawn through an SVG image, which cannot load web addresses. Images and fonts that the
+// slide names at a web address are fetched first and embedded as data URIs, up to a size limit each.
+const REMOTE_ASSET_MAX_BYTES = 5_000_000
+const REMOTE_ASSET_TIMEOUT_MS = 4000
+
+// Each address is fetched once per import, with its own timeout and the byte limit.
+const remoteAssetCache = new Map<string, Promise<string | null>>()
+
+function fetchAsDataUrl(url: string): Promise<string | null> {
+  const cached = remoteAssetCache.get(url)
+  if (cached) return cached
+  const pending = (async (): Promise<string | null> => {
+    const result = await fetchLimited(url, REMOTE_ASSET_MAX_BYTES, REMOTE_ASSET_TIMEOUT_MS)
+    if (!result) return null
+    return await new Promise<string | null>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(new Blob([result.bytes], { type: result.type }))
+    })
+  })()
+  remoteAssetCache.set(url, pending)
+  return pending
+}
+
+export async function inlineRemoteImages(root: HTMLElement): Promise<void> {
+  await Promise.all(Array.from(root.querySelectorAll('img')).map(async (img) => {
+    const src = img.getAttribute('src') || ''
+    if (!/^https?:/i.test(src)) return
+    const data = await fetchAsDataUrl(src)
+    if (data) img.setAttribute('src', data)
+  }))
+}
+
+export async function inlineRemoteFonts(cssText: string): Promise<string> {
+  const urls = new Set<string>()
+  for (const block of cssText.match(/@font-face\s*\{[^}]*\}/gi) || []) {
+    for (const match of block.matchAll(/url\(\s*["']?(https?:[^"')]+)["']?\s*\)/gi)) urls.add(match[1])
+  }
+  let result = cssText
+  for (const url of urls) {
+    const data = await fetchAsDataUrl(url)
+    if (data) result = result.split(url).join(data)
+  }
+  return result
+}

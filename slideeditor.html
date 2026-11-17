@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg: #0e1116; --panel: #171b22; --panel-2: #1e242e; --line: #2a313c;
-    --text: #e6e9ef; --muted: #9aa4b2; --accent: #7c5cff; --accent-2: #ec4899;
+    --text: #e6e9ef; --muted: #9aa4b2; --accent: #6d4aff; --accent-2: #ec4899;
     --ok: #22c55e; --img: #38bdf8;
   }
   * { box-sizing: border-box; }
@@ -29,7 +29,7 @@
   }
   .btn:hover { border-color: #3a4452; }
   .btn:focus-visible, .seg button:focus-visible, .layer:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .btn.primary:hover { filter: brightness(1.08); }
   .btn:disabled { opacity: .5; cursor: default; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
@@ -50,7 +50,7 @@
   #stage.dragover { outline: 3px dashed var(--accent); outline-offset: -10px; }
   #stage.dragover::after { content: 'Drop to import'; position: absolute; inset: 0; display: flex; align-items: center;
     justify-content: center; font-size: 22px; font-weight: 700; color: var(--accent);
-    background: rgba(124, 92, 255, .08); pointer-events: none; }
+    background: rgba(109, 74, 255, .08); pointer-events: none; }
   #canvasWrap { position: relative; box-shadow: 0 12px 48px rgba(0,0,0,.5); display: none; }
   #canvas { position: relative; overflow: hidden; transform-origin: top left; }
   /* Preview layers are read-only; conversion output is edited in PowerPoint. */
@@ -71,7 +71,7 @@
   .pill.text .n { color: var(--ok); }
   .pill.image .n { color: var(--img); }
   .layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-  .layer { display: flex; align-items: center; gap: 8px; padding: 7px 9px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 12px; }
+  .layer { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 9px; background: var(--panel-2); color: inherit; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font: inherit; font-size: 12px; text-align: left; }
   .layer:hover { border-color: #3a4452; }
   .layer.active { border-color: var(--accent-2); }
   .layer .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; padding: 2px 6px; border-radius: 4px; flex: 0 0 auto; }
@@ -112,11 +112,11 @@
     <button data-preset="1-1" aria-pressed="false">1:1</button>
   </div>
   <button class="btn" id="importBtn">Import</button>
-  <input type="file" id="fileInput" accept=".html,.htm,.css,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
   <div class="spacer"></div>
   <button class="btn" id="exportHtmlBtn" disabled>Export HTML</button>
   <button class="btn primary" id="exportPptxBtn" disabled>Export PPTX</button>
 </header>
+<input type="file" id="fileInput" accept=".html,.htm,.css,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
 <main>
   <div id="stage">
     <div id="empty">Import an HTML slide — or drag &amp; drop it anywhere here — to convert it into an editable PowerPoint deck. Text becomes real text boxes, images and gradients become separate picture/shape layers, all movable and resizable in PowerPoint. A PNG imports as a single picture layer.</div>
@@ -4234,7 +4234,6 @@ async function inlineCompanionStylesheets(
     canvas: { width: 1920, height: 1080, background: undefined },
     components: [],
     highlightId: null,
-    title: 'Slide',
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -4364,9 +4363,9 @@ async function inlineCompanionStylesheets(
       const kind = kinds[i];
       const name = escapeHtml(c.sourceLabel || c.type || 'layer');
       const dim = Math.round(c.width) + '×' + Math.round(c.height || 0);
-      return '<li class="layer' + (c.id === state.highlightId ? ' active' : '') + '" tabindex="0" role="button" aria-pressed="' + (c.id === state.highlightId) + '" data-id="' + escapeHtml(c.id) + '">' +
+      return '<li><button type="button" class="layer' + (c.id === state.highlightId ? ' active' : '') + '" aria-pressed="' + (c.id === state.highlightId) + '" data-id="' + escapeHtml(c.id) + '">' +
         '<span class="tag ' + kind + '">' + TAG_LABEL[kind] + '</span>' +
-        '<span class="name">' + name + '</span><span class="dim">' + dim + '</span></li>';
+        '<span class="name">' + name + '</span><span class="dim">' + dim + '</span></button></li>';
     }).join('');
     box.innerHTML =
       '<div><h2>Converted layers</h2><div class="summary">' +
@@ -4382,12 +4381,7 @@ async function inlineCompanionStylesheets(
       const again = [...document.querySelectorAll('#inspector .layer')].find((el) => el.dataset.id === li.dataset.id);
       if (again) again.focus();
     };
-    box.querySelectorAll('.layer').forEach((li) => {
-      li.addEventListener('click', () => selectLayer(li));
-      li.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectLayer(li); }
-      });
-    });
+    box.querySelectorAll('.layer').forEach((row) => row.addEventListener('click', () => selectLayer(row)));
   }
 
   // ---- Import ----
@@ -4448,7 +4442,7 @@ async function inlineCompanionStylesheets(
     const dataUrl = await readAsDataUrl(file);
     const nat = await naturalSize(dataUrl);
     // A raster defines its own size; import at native (fixed presets remain opt-in).
-    if (state.preset === 'native') state.sourceCanvas = { width: nat.w || 1920, height: nat.h || 1080 };
+    state.sourceCanvas = { width: nat.w || 1920, height: nat.h || 1080 };
     const p = presetDims();
     // Fit the image inside the slide preserving aspect, centered.
     const iw = nat.w || p.width, ih = nat.h || p.height;
@@ -4514,16 +4508,24 @@ async function inlineCompanionStylesheets(
   }
   function exportPptx() {
     if (!state.components.length) return;
-    const res = E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: state.title, document: currentDocument() }]);
-    download(res.blob, 'slides.pptx');
-    if (res.warnings && res.warnings.length) toast('Exported PPTX with notes:', res.warnings);
-    else toast('Exported slides.pptx');
+    try {
+      const res = E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Slide', document: currentDocument() }]);
+      download(res.blob, 'slides.pptx');
+      if (res.warnings && res.warnings.length) toast('Exported PPTX with notes:', res.warnings);
+      else toast('Exported slides.pptx');
+    } catch (err) {
+      toast('Export failed: ' + (err && err.message ? err.message : 'unexpected error'));
+    }
   }
   function exportHtml() {
     if (!state.components.length) return;
-    const html = E.convertSlideComponentsToHtml({ canvas: state.canvas, components: state.components });
-    download(new Blob([html], { type: 'text/html' }), 'slides.html');
-    toast('Exported slides.html');
+    try {
+      const html = E.convertSlideComponentsToHtml({ canvas: state.canvas, components: state.components });
+      download(new Blob([html], { type: 'text/html' }), 'slides.html');
+      toast('Exported slides.html');
+    } catch (err) {
+      toast('Export failed: ' + (err && err.message ? err.message : 'unexpected error'));
+    }
   }
 
   // ---- Wiring ----
@@ -4531,10 +4533,13 @@ async function inlineCompanionStylesheets(
     const b = e.target.closest('button[data-preset]');
     if (b) applyPreset(b.dataset.preset);
   });
-  function openImport() { $('#importModal').classList.add('show'); $('#pasteArea').focus(); }
+  // The page behind the open dialog is inert, so a screen reader and the Tab key stay inside it.
+  function setPageInert(on) { ['header', 'main'].forEach((tag) => { $(tag).inert = on; }); }
+  function openImport() { $('#importModal').classList.add('show'); setPageInert(true); $('#pasteArea').focus(); }
   function closeImport() {
     const wasOpen = $('#importModal').classList.contains('show');
     $('#importModal').classList.remove('show');
+    setPageInert(false);
     if (wasOpen) $('#importBtn').focus();
   }
   $('#importBtn').addEventListener('click', openImport);
@@ -4559,7 +4564,7 @@ async function inlineCompanionStylesheets(
   });
   $('#chooseFilesBtn').addEventListener('click', () => $('#fileInput').click());
   $('#fileInput').addEventListener('change', async (e) => {
-    $('#importModal').classList.remove('show');
+    closeImport();
     if (e.target.files && e.target.files.length) await importFiles(e.target.files);
     e.target.value = '';
   });

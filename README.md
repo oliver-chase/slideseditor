@@ -102,7 +102,6 @@ There is deliberately no on-page drag, resize, or inline editing. The browser co
 Open work and deferred features are tracked in the `slideseditor` GitHub Project (see `CLAUDE.md`), including:
 
 * SVG input
-* HSL colors
 * Multi-slide conversion
 
 ## Repo layout

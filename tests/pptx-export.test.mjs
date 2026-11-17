@@ -111,4 +111,9 @@ assert.equal(Number(ext[1]) / Number(ext[2]), 2, 'a picture with no height keeps
 const entities = await slideXml('It&#x27;s &#39;fine&#39; &amp; &#65;')
 assert.ok(entities.includes('It&apos;s &apos;fine&apos; &amp; A'), 'numeric entities decode, then the text is XML-escaped once')
 
+// hsl() colors convert, with commas or spaces.
+const hslText = await slideXml('Colored', { color: 'hsl(200, 80%, 40%)', backgroundColor: 'hsl(0 100% 50% / 0.5)' })
+assert.ok(hslText.includes('srgbClr val="1481B8"'), 'hsl text color converts')
+assert.ok(hslText.includes('srgbClr val="FF0000"') && hslText.includes('<a:alpha val="50000"'), 'hsl with a slash alpha converts')
+
 console.log('pptx-export tests passed')

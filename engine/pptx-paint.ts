@@ -78,7 +78,28 @@ export function parseCssColor(value: string | undefined): ParsedColor | null {
       alpha: clamp(alphaRaw, 0, 1),
     }
   }
-  return null
+  return parseHslColor(raw)
+}
+
+// hsl() and hsla(), with commas or with spaces and a slash before the alpha.
+function parseHslColor(raw: string): ParsedColor | null {
+  const match = raw.match(/^hsla?\(\s*(-?[\d.]+)(?:deg)?\s*[,\s]\s*([\d.]+)%\s*[,\s]\s*([\d.]+)%\s*(?:[,/]\s*([\d.]+)(%?)\s*)?\)$/)
+  if (!match) return null
+  const hue = ((Number.parseFloat(match[1]) % 360) + 360) % 360
+  const s = clamp(Number.parseFloat(match[2]), 0, 100) / 100
+  const l = clamp(Number.parseFloat(match[3]), 0, 100) / 100
+  const alphaRaw = match[4] === undefined ? 1 : Number.parseFloat(match[4]) / (match[5] ? 100 : 1)
+  if (![hue, s, l, alphaRaw].every(Number.isFinite)) return null
+  const chroma = (1 - Math.abs(2 * l - 1)) * s
+  const channel = (n: number): number => {
+    const k = (n + hue / 30) % 12
+    return l - (chroma / 2) * Math.max(-1, Math.min(k - 3, 9 - k, 1))
+  }
+  const hex = [channel(0), channel(8), channel(4)]
+    .map((value) => Math.round(clamp(value, 0, 1) * 255).toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()
+  return { hex, alpha: clamp(alphaRaw, 0, 1) }
 }
 
 export function normalizeHexColor(value: string | undefined): string | null {

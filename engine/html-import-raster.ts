@@ -132,6 +132,12 @@ async function rasterizeElementInline(el: HTMLElement, win: Window, scale: numbe
   const wrapWs = singleLine ? 'white-space:nowrap;' : ''
   const wrap = document.createElementNS(XHTML_NS, 'div') as unknown as HTMLElement
   wrap.setAttribute('style', 'width:' + w + 'px;height:' + h + 'px;overflow:visible;' + wrapWs)
+  // The page's styles come along, with web fonts embedded, so the run is drawn in its own typeface.
+  for (const st of Array.from(el.ownerDocument.querySelectorAll('style'))) {
+    const styleClone = st.cloneNode(true) as HTMLStyleElement
+    styleClone.textContent = await inlineRemoteFonts(styleClone.textContent || '')
+    wrap.appendChild(styleClone)
+  }
   wrap.appendChild(clone)
   const inner = new XMLSerializer().serializeToString(wrap)
   return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)

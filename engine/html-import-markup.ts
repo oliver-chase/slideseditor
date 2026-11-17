@@ -169,8 +169,9 @@ export function getCanvasRoot(doc: Document): HTMLElement | null {
       const height = parsePositivePx(styleMap.height ?? candidate.getAttribute('height'))
       if (!width || !height) return { candidate, score: 0 }
 
-      const className = (candidate.className || '').toString().toLowerCase()
-      const isSemanticSlideMarker = /slide|deck|canvas|presentation|frame|artboard/.test(className)
+      // Class names match as whole words, split on spaces, hyphens, underscores and camelCase.
+      const classWords = (candidate.getAttribute('class') || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[\s_-]+/)
+      const isSemanticSlideMarker = classWords.some((word) => ['slide', 'slides', 'deck', 'canvas', 'presentation', 'frame', 'artboard'].includes(word))
       if (!isSemanticSlideMarker) return { candidate, score: 0 }
 
       const ratio = width / height

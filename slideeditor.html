@@ -1722,8 +1722,9 @@ function getCanvasRoot(doc          )                     {
       const height = parsePositivePx(styleMap.height ?? candidate.getAttribute('height'))
       if (!width || !height) return { candidate, score: 0 }
 
-      const className = (candidate.className || '').toString().toLowerCase()
-      const isSemanticSlideMarker = /slide|deck|canvas|presentation|frame|artboard/.test(className)
+      // Class names match as whole words, split on spaces, hyphens, underscores and camelCase.
+      const classWords = (candidate.getAttribute('class') || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[\s_-]+/)
+      const isSemanticSlideMarker = classWords.some((word) => ['slide', 'slides', 'deck', 'canvas', 'presentation', 'frame', 'artboard'].includes(word))
       if (!isSemanticSlideMarker) return { candidate, score: 0 }
 
       const ratio = width / height
@@ -2222,6 +2223,12 @@ async function rasterizeElementInline(el             , win        , scale       
   const wrapWs = singleLine ? 'white-space:nowrap;' : ''
   const wrap = document.createElementNS(XHTML_NS, 'div')                          
   wrap.setAttribute('style', 'width:' + w + 'px;height:' + h + 'px;overflow:visible;' + wrapWs)
+  // The page's styles come along, with web fonts embedded, so the run is drawn in its own typeface.
+  for (const st of Array.from(el.ownerDocument.querySelectorAll('style'))) {
+    const styleClone = st.cloneNode(true)                    
+    styleClone.textContent = await inlineRemoteFonts(styleClone.textContent || '')
+    wrap.appendChild(styleClone)
+  }
   wrap.appendChild(clone)
   const inner = new XMLSerializer().serializeToString(wrap)
   return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)
@@ -3081,7 +3088,9 @@ function escXml(value        )         {
 }
 
 function codePointText(codePoint        )         {
-  return codePoint > 0 && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : ''
+  // A surrogate half is not a character, and XML cannot hold one.
+  const isSurrogate = codePoint >= 0xd800 && codePoint <= 0xdfff
+  return codePoint > 0 && codePoint <= 0x10ffff && !isSurrogate ? String.fromCodePoint(codePoint) : ''
 }
 
 // One pass over the references, so "&#38;amp;" decodes once to "&amp;" and not twice to "&".
@@ -3100,7 +3109,8 @@ function decodeReferences(text        )         {
       const hex = ref[1] === 'x' || ref[1] === 'X'
       return codePointText(Number.parseInt(ref.slice(hex ? 2 : 1), hex ? 16 : 10))
     }
-    return NAMED_REFERENCES[ref.toLowerCase()] ?? match
+    const name = ref.toLowerCase()
+    return Object.prototype.hasOwnProperty.call(NAMED_REFERENCES, name) ? NAMED_REFERENCES[name] : match
   })
 }
 
@@ -4508,8 +4518,10 @@ async function inlineCompanionStylesheets(
     const svg = isSvg ? await svgFileToPng(file) : null;
     const dataUrl = svg ? svg.dataUrl : await readAsDataUrl(file);
     const nat = svg ? { w: svg.w, h: svg.h } : await naturalSize(dataUrl);
-    // A raster defines its own size; import at native (fixed presets remain opt-in).
+    // A raster defines its own size, so the import is at Native and the preset buttons follow.
     state.sourceCanvas = { width: nat.w || 1920, height: nat.h || 1080 };
+    state.preset = 'native';
+    document.querySelectorAll('#presetSeg button').forEach((b) => { const on = b.dataset.preset === 'native'; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
     const p = presetDims();
     // Fit the image inside the slide preserving aspect, centered.
     const iw = nat.w || p.width, ih = nat.h || p.height;

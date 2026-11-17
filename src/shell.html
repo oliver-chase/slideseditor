@@ -381,8 +381,10 @@
     const svg = isSvg ? await svgFileToPng(file) : null;
     const dataUrl = svg ? svg.dataUrl : await readAsDataUrl(file);
     const nat = svg ? { w: svg.w, h: svg.h } : await naturalSize(dataUrl);
-    // A raster defines its own size; import at native (fixed presets remain opt-in).
+    // A raster defines its own size, so the import is at Native and the preset buttons follow.
     state.sourceCanvas = { width: nat.w || 1920, height: nat.h || 1080 };
+    state.preset = 'native';
+    document.querySelectorAll('#presetSeg button').forEach((b) => { const on = b.dataset.preset === 'native'; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
     const p = presetDims();
     // Fit the image inside the slide preserving aspect, centered.
     const iw = nat.w || p.width, ih = nat.h || p.height;

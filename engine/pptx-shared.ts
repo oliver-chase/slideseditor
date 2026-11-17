@@ -53,7 +53,9 @@ export function escXml(value: string): string {
 }
 
 function codePointText(codePoint: number): string {
-  return codePoint > 0 && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : ''
+  // A surrogate half is not a character, and XML cannot hold one.
+  const isSurrogate = codePoint >= 0xd800 && codePoint <= 0xdfff
+  return codePoint > 0 && codePoint <= 0x10ffff && !isSurrogate ? String.fromCodePoint(codePoint) : ''
 }
 
 // One pass over the references, so "&#38;amp;" decodes once to "&amp;" and not twice to "&".
@@ -72,7 +74,8 @@ function decodeReferences(text: string): string {
       const hex = ref[1] === 'x' || ref[1] === 'X'
       return codePointText(Number.parseInt(ref.slice(hex ? 2 : 1), hex ? 16 : 10))
     }
-    return NAMED_REFERENCES[ref.toLowerCase()] ?? match
+    const name = ref.toLowerCase()
+    return Object.prototype.hasOwnProperty.call(NAMED_REFERENCES, name) ? NAMED_REFERENCES[name] : match
   })
 }
 

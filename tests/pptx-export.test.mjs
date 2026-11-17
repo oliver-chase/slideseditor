@@ -180,4 +180,8 @@ const hiddenComponent = E.createSlideDocument({ canvas: { width: 800, height: 40
 const hiddenXml = unzip(await E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: hiddenComponent }]).blob.arrayBuffer())['ppt/slides/slide1.xml'].toString('utf8')
 assert.ok(hiddenXml.includes('Shown text') && !hiddenXml.includes('Secret text'), 'a hidden component is not exported')
 
+// An entity name that is only a property of every object is not an entity, and a surrogate half is dropped.
+const odd = await slideXml('a &constructor; b &#xD800; c')
+assert.ok(!odd.includes('native code') && odd.includes('&amp;constructor;') && !/[\uD800-\uDFFF]/.test(odd), 'unknown entity names stay as typed and surrogates are removed')
+
 console.log('pptx-export tests passed')

@@ -10,6 +10,8 @@ The Slides Converter is a **local, zero-dependency, single-file browser tool**. 
 
 ## Structure
 
+The code and its tests. The repo also holds `docs/` (catalog, sharing verdict, accepted items and gate lists), `examples/`, `.githooks/` and `.github/`, `CLAUDE.md` and `QUALITY_BASELINE.md`.
+
 ```
 slideseditor/
 ├── slideeditor.html         Built deliverable (engine inlined into the shell)

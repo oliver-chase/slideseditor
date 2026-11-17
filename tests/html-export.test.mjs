@@ -27,5 +27,14 @@ assert.ok(!injected.includes('<script>') && !injected.includes('red;}'), 'an uns
 
 // The page starts with a doctype and carries a title.
 assert.ok(hiddenHtml.startsWith('<!doctype html>'), 'the export starts with a doctype')
+assert.ok(hiddenHtml.includes('<title>Slide Export</title>'), 'the export carries a neutral title')
+
+// Script URLs are recognised, including tab-split and mixed-case forms.
+for (const url of ['javascript:alert(1)', 'JaVa\tScRiPt:alert(1)', ' vbscript:x', 'data:text/html,<b>x</b>']) {
+  assert.ok(E.isScriptUrl(url), url + ' is a script URL')
+}
+for (const url of ['https://example.test/a', 'data:image/png;base64,AAAA', '#anchor', 'mailto:a@b.test']) {
+  assert.ok(!E.isScriptUrl(url), url + ' is not a script URL')
+}
 
 console.log('html-export tests passed')

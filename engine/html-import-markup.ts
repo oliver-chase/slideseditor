@@ -61,7 +61,7 @@ export function sanitizeMarkup(html: string): string {
 
 // Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside
 // the scheme, so they are removed before the check: "java&#9;script:" is still javascript:.
-function isScriptUrl(value: string): boolean {
+export function isScriptUrl(value: string): boolean {
   const compact = value.replace(/[\u0000-\u0020\u007f-\u009f]+/g, '').toLowerCase()
   return compact.startsWith('javascript:') || compact.startsWith('vbscript:') || compact.startsWith('data:text/html')
 }
@@ -274,14 +274,14 @@ export function shouldImportFlowNode(
   return false
 }
 
+// Elements that flow inside a line of text. They stay part of their parent's text box.
+const INLINE_TEXT_TAGS = new Set(['a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'em', 'i', 'kbd', 'mark', 'q', 's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'time', 'u', 'var', 'br', 'wbr'])
+
 // Find the outermost text-bearing (or media) descendants of a positioned container
 // so each can become its own text-box/picture layer. Elements nested inside another
 // text block are skipped, so a paragraph with an inline span stays one text box while
 // a card holding a separate heading and body yields two. Positioned descendants are
 // excluded because they are already imported as their own absolute layers.
-// Elements that flow inside a line of text. They stay part of their parent's text box.
-const INLINE_TEXT_TAGS = new Set(['a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'em', 'i', 'kbd', 'mark', 'q', 's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'time', 'u', 'var', 'br', 'wbr'])
-
 export function collectNestedTextLeaves(
   container: HTMLElement,
   absoluteIdSet: Set<string>,

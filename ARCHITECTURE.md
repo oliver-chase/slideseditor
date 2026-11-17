@@ -71,4 +71,4 @@ No npm install, no bundler dependency, no deploy.
 
 - Zero runtime dependencies; the output must stay a single self-contained HTML file
 - Rebuild `slideeditor.html` after any change to `engine/*.ts` or `src/shell.html`
-- Engine PPTX/HTML paths are node-headless testable (strip types, run, unzip, assert). The `html-import-*.ts` files and the shell need a real browser (DOMParser, iframe, getComputedStyle). Verify them in a browser against `file://slideeditor.html` through the `window.__slidesTest` hook, which exposes `importFromHtml`, `importImageFile`, `getState` and `applyPreset`
+- Engine PPTX/HTML paths are node-headless testable (strip types, run, unzip, assert). The `html-import-*.ts` files and the shell need a real browser (DOMParser, iframe, getComputedStyle), and no automated test covers them. Verify them in a browser against `file://slideeditor.html` through the `window.__slidesTest` hook, which exposes `importFromHtml`, `importImageFile`, `getState` and `applyPreset`

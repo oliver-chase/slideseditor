@@ -153,6 +153,11 @@ assert.ok(/<a:rPr[^>]* b="1"[^>]*>(?:(?!<\/a:r>)[\s\S])*?<a:t>bold<\/a:t>/.test(
 assert.ok(/<a:rPr[^>]* i="1"[^>]*><a:solidFill><a:srgbClr val="FF0000"\/>(?:(?!<\/a:r>)[\s\S])*?<a:t>red italic<\/a:t>/.test(runsXml), 'a styled span carries its color and italic')
 assert.ok(/<a:rPr[^>]* u="sng"[^>]*>(?:(?!<\/a:r>)[\s\S])*?<a:t>line<\/a:t>/.test(runsXml), 'an underline run is underlined')
 assert.equal((runsXml.match(/<a:p>/g) || []).length, 2, 'a br starts a second paragraph')
+assert.ok(/srgbClr val="0000FF"\/>(?:(?!<\/a:r>)[\s\S])*?<a:t>blue<\/a:t>/.test(runsXml), 'a font color attribute colors its run')
+
+// The end of a list item or heading starts a new line.
+const blocks = await slideXml('<h3>Title</h3>Caption<ul><li>one</li><li>two</li></ul>')
+assert.equal((blocks.match(/<a:p>/g) || []).length, 4, 'headings and list items each take a line')
 assert.ok(/<a:t>Plain <\/a:t>/.test(runsXml), 'plain text keeps its trailing space')
 
 // A tiny canvas still gives a slide of at least one inch on each side.

@@ -205,8 +205,11 @@ export function extractPseudoLayers(
   // A layer is emitted only with its host, so layers of hosts that are not imported are left out and not counted.
   const pseudoByHost = new Map(Array.from(allByHost).filter(([hostId]) => builtHostIds.has(hostId)))
   const pseudoLayerCount = Array.from(pseudoByHost.values()).reduce((total, entries) => total + entries.length, 0)
-  if (pseudoDescriptors.length > 0 && pseudoLayerCount === 0) {
+  const resolvedCount = Array.from(allByHost.values()).reduce((total, entries) => total + entries.length, 0)
+  if (pseudoDescriptors.length > 0 && resolvedCount === 0) {
     warnings.push('Pseudo-element selectors were detected but could not be resolved to rendered layers.')
+  } else if (resolvedCount > 0 && pseudoLayerCount === 0) {
+    warnings.push('Pseudo-element layers were found on elements that are not imported as layers, and were skipped.')
   } else if (pseudoLayerCount > 0) {
     warnings.push(
       'Extracted ' + pseudoLayerCount + ' pseudo-element layer' + (pseudoLayerCount === 1 ? '' : 's') + ' from CSS.',

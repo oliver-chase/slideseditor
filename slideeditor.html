@@ -1827,14 +1827,14 @@ function shouldImportFlowNode(
   return false
 }
 
+// Elements that flow inside a line of text. They stay part of their parent's text box.
+const INLINE_TEXT_TAGS = new Set(['a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'em', 'i', 'kbd', 'mark', 'q', 's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'time', 'u', 'var', 'br', 'wbr'])
+
 // Find the outermost text-bearing (or media) descendants of a positioned container
 // so each can become its own text-box/picture layer. Elements nested inside another
 // text block are skipped, so a paragraph with an inline span stays one text box while
 // a card holding a separate heading and body yields two. Positioned descendants are
 // excluded because they are already imported as their own absolute layers.
-// Elements that flow inside a line of text. They stay part of their parent's text box.
-const INLINE_TEXT_TAGS = new Set(['a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'em', 'i', 'kbd', 'mark', 'q', 's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'time', 'u', 'var', 'br', 'wbr'])
-
 function collectNestedTextLeaves(
   container             ,
   absoluteIdSet             ,
@@ -2082,8 +2082,11 @@ function extractPseudoLayers(
   // A layer is emitted only with its host, so layers of hosts that are not imported are left out and not counted.
   const pseudoByHost = new Map(Array.from(allByHost).filter(([hostId]) => builtHostIds.has(hostId)))
   const pseudoLayerCount = Array.from(pseudoByHost.values()).reduce((total, entries) => total + entries.length, 0)
-  if (pseudoDescriptors.length > 0 && pseudoLayerCount === 0) {
+  const resolvedCount = Array.from(allByHost.values()).reduce((total, entries) => total + entries.length, 0)
+  if (pseudoDescriptors.length > 0 && resolvedCount === 0) {
     warnings.push('Pseudo-element selectors were detected but could not be resolved to rendered layers.')
+  } else if (resolvedCount > 0 && pseudoLayerCount === 0) {
+    warnings.push('Pseudo-element layers were found on elements that are not imported as layers, and were skipped.')
   } else if (pseudoLayerCount > 0) {
     warnings.push(
       'Extracted ' + pseudoLayerCount + ' pseudo-element layer' + (pseudoLayerCount === 1 ? '' : 's') + ' from CSS.',
@@ -2293,6 +2296,11 @@ async function rasterizeArtLayer(
   let bodyCss = ''
   for (let j = 0; j < bodyCs.length; j += 1) bodyCss += bodyCs[j] + ':' + bodyCs.getPropertyValue(bodyCs[j]) + ';'
   const wrap = document.createElementNS(XHTML_NS, 'div')                          
+  // The root's class and id stay, so page CSS that names the root still matches in the artwork.
+  const rootClass = renderRoot.getAttribute('class')
+  const rootId = renderRoot.getAttribute('id')
+  if (rootClass) wrap.setAttribute('class', rootClass)
+  if (rootId) wrap.setAttribute('id', rootId)
   wrap.setAttribute('style', bodyCss + 'width:' + w + 'px;height:' + h + 'px;margin:0;position:relative;overflow:hidden;')
   for (const st of Array.from(sdoc.querySelectorAll('style'))) {
     const styleClone = st.cloneNode(true)                    
@@ -2456,7 +2464,7 @@ async function buildRasterizedSlide(
     components.push({
       id: 'raster-grad-' + gradSeq,
       type: 'logo',
-      sourceLabel: (getNodeLabel(g) || 'gradient text'),
+      sourceLabel: getNodeLabel(g),
       ...measuredBox(g, measureRoot),
       content: '<img src="' + uri + '" />',
       style: {},
@@ -3103,7 +3111,7 @@ function toPlainText(html        )         {
     .replace(/[ \t\r\n\f]+/g, ' ')
     .replace(/<br\s*\/?>(\s*)/gi, '\n')
     .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/(?:div|h[1-6]|li|tr|section|article|ul|ol|blockquote)>/gi, '\n')
   const noTags = withLineBreaks.replace(/<(?:[^>"']|"[^"]*"|'[^']*')*>/g, '')
   return decodeReferences(noTags)
     .replace(/\r\n/g, '\n')
@@ -3141,6 +3149,8 @@ function clamp(value        , min        , max        )         {
 
 // Elements with no closing tag. They carry no text, so they never change the style of what follows.
 const VOID_TAGS = new Set(['img', 'input', 'hr', 'wbr', 'area', 'base', 'col', 'embed', 'link', 'meta', 'source', 'track'])
+
+const BLOCK_TAGS = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'section', 'article', 'ul', 'ol', 'blockquote'])
 
 function styleOfTag(tag        , attributes        , inherited          )           {
   const next = { ...inherited }
@@ -3194,9 +3204,12 @@ function toTextLines(rawHtml        )              {
         stack.length = at
         current = stack.length > 0 ? stack[stack.length - 1].style : { bold: false, italic: false, underline: false }
       }
-      if (tag === 'p' || tag === 'div') lines.push([])
+      // The end of a block starts a new line, unless the line is still empty.
+      if (BLOCK_TAGS.has(tag) && lines[lines.length - 1].length > 0) lines.push([])
       continue
     }
+    // A block also starts on a new line when text came before it.
+    if (BLOCK_TAGS.has(tag) && lines[lines.length - 1].length > 0) lines.push([])
     if (/\/\s*$/.test(match[3]) || VOID_TAGS.has(tag)) continue
     current = styleOfTag(tag, match[3], current)
     stack.push({ tag, style: current })
@@ -4251,6 +4264,7 @@ async function inlineCompanionStylesheets(
     createSlideDocument,
     validateImportFile,
     sanitizeMarkup,
+    isScriptUrl,
     validateHtmlImportInput,
     validateParsedResult,
     classifyImportError,
@@ -4331,22 +4345,22 @@ async function inlineCompanionStylesheets(
     wrapEl.style.width = state.canvas.width * scale + 'px';
     wrapEl.style.height = state.canvas.height * scale + 'px';
   }
-  function componentInlineStyle(c) {
+  // Each style is set as a property, so a value that holds a semicolon cannot add declarations of its own.
+  function applyComponentStyle(el, c) {
     const s = c.style || {};
-    const p = [];
-    if (s.fontSize) p.push('font-size:' + s.fontSize + 'px');
-    if (s.fontWeight) p.push('font-weight:' + s.fontWeight);
-    if (s.fontFamily) p.push('font-family:' + s.fontFamily);
-    if (s.color) p.push('color:' + s.color);
-    if (s.backgroundFill) p.push('background:' + s.backgroundFill);
-    else if (s.backgroundColor) p.push('background-color:' + s.backgroundColor);
-    if (s.borderColor && s.borderWidth) p.push('border:' + s.borderWidth + 'px ' + (s.borderStyle || 'solid') + ' ' + s.borderColor);
-    if (s.borderRadius) p.push('border-radius:' + s.borderRadius + 'px');
-    if (s.boxShadow) p.push('box-shadow:' + s.boxShadow);
-    if (s.fontStyle) p.push('font-style:' + s.fontStyle);
-    if (s.lineHeight) p.push('line-height:' + s.lineHeight + 'px');
-    if (s.textAlign) p.push('text-align:' + s.textAlign);
-    return p.join(';');
+    const set = (name, value) => { if (value !== undefined && value !== null && value !== '') el.style.setProperty(name, String(value)); };
+    if (s.fontSize) set('font-size', s.fontSize + 'px');
+    set('font-weight', s.fontWeight);
+    set('font-family', s.fontFamily);
+    set('color', s.color);
+    if (s.backgroundFill) set('background', s.backgroundFill);
+    else set('background-color', s.backgroundColor);
+    if (s.borderColor && s.borderWidth) set('border', s.borderWidth + 'px ' + (s.borderStyle || 'solid') + ' ' + s.borderColor);
+    if (s.borderRadius) set('border-radius', s.borderRadius + 'px');
+    set('box-shadow', s.boxShadow);
+    set('font-style', s.fontStyle);
+    if (s.lineHeight) set('line-height', s.lineHeight + 'px');
+    set('text-align', s.textAlign);
   }
   function renderPreview() {
     const has = state.components.length > 0;
@@ -4366,7 +4380,7 @@ async function inlineCompanionStylesheets(
       el.style.top = c.y + 'px';
       el.style.width = c.width + 'px';
       if (typeof c.height === 'number') el.style.height = c.height + 'px';
-      el.style.cssText += ';' + componentInlineStyle(c);
+      applyComponentStyle(el, c);
       el.innerHTML = sanitize(c.content || '');
       canvasEl.appendChild(el);
     }
@@ -4390,6 +4404,8 @@ async function inlineCompanionStylesheets(
   function renderInspector() {
     const box = $('#inspector');
     if (!state.components.length) { box.innerHTML = '<div class="empty-note">No slide loaded yet.</div>'; return; }
+    // The list is rebuilt on every render, so keep keyboard focus on the same row.
+    const focusedId = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('layer') ? document.activeElement.dataset.id : null;
     const kinds = state.components.map(layerKind);
     const textCount = kinds.filter((k) => k === 'text').length;
     const nonTextCount = kinds.length - textCount;
@@ -4412,11 +4428,12 @@ async function inlineCompanionStylesheets(
       state.highlightId = (state.highlightId === li.dataset.id) ? null : li.dataset.id;
       drawHighlight();
       renderInspector();
-      // The list is rebuilt on every selection; put focus back on the same row.
-      const again = [...document.querySelectorAll('#inspector .layer')].find((el) => el.dataset.id === li.dataset.id);
-      if (again) again.focus();
     };
     box.querySelectorAll('.layer').forEach((row) => row.addEventListener('click', () => selectLayer(row)));
+    if (focusedId) {
+      const again = [...box.querySelectorAll('.layer')].find((el) => el.dataset.id === focusedId);
+      if (again) again.focus();
+    }
   }
 
   // ---- Import ----
@@ -4479,7 +4496,7 @@ async function inlineCompanionStylesheets(
     const canvas = document.createElement('canvas');
     canvas.width = w * 2; canvas.height = h * 2;
     canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/png');
+    return { dataUrl: canvas.toDataURL('image/png'), w, h };
   }
   async function importImageFile(file) {
     if (file.size > MAX_IMAGE_BYTES) {
@@ -4487,8 +4504,10 @@ async function inlineCompanionStylesheets(
       return;
     }
     const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
-    const dataUrl = isSvg ? await svgFileToPng(file) : await readAsDataUrl(file);
-    const nat = await naturalSize(dataUrl);
+    // An SVG is drawn at twice its size for sharpness, so its layout size comes from the SVG itself.
+    const svg = isSvg ? await svgFileToPng(file) : null;
+    const dataUrl = svg ? svg.dataUrl : await readAsDataUrl(file);
+    const nat = svg ? { w: svg.w, h: svg.h } : await naturalSize(dataUrl);
     // A raster defines its own size; import at native (fixed presets remain opt-in).
     state.sourceCanvas = { width: nat.w || 1920, height: nat.h || 1080 };
     const p = presetDims();

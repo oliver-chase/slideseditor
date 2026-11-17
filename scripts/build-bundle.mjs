@@ -52,6 +52,7 @@ const PUBLIC_API = [
   'createSlideDocument',
   'validateImportFile',
   'sanitizeMarkup',
+  'isScriptUrl',
   'validateHtmlImportInput',
   'validateParsedResult',
   'classifyImportError',

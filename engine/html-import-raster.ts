@@ -206,6 +206,11 @@ async function rasterizeArtLayer(
   let bodyCss = ''
   for (let j = 0; j < bodyCs.length; j += 1) bodyCss += bodyCs[j] + ':' + bodyCs.getPropertyValue(bodyCs[j]) + ';'
   const wrap = document.createElementNS(XHTML_NS, 'div') as unknown as HTMLElement
+  // The root's class and id stay, so page CSS that names the root still matches in the artwork.
+  const rootClass = renderRoot.getAttribute('class')
+  const rootId = renderRoot.getAttribute('id')
+  if (rootClass) wrap.setAttribute('class', rootClass)
+  if (rootId) wrap.setAttribute('id', rootId)
   wrap.setAttribute('style', bodyCss + 'width:' + w + 'px;height:' + h + 'px;margin:0;position:relative;overflow:hidden;')
   for (const st of Array.from(sdoc.querySelectorAll('style'))) {
     const styleClone = st.cloneNode(true) as HTMLStyleElement
@@ -369,7 +374,7 @@ export async function buildRasterizedSlide(
     components.push({
       id: 'raster-grad-' + gradSeq,
       type: 'logo',
-      sourceLabel: (getNodeLabel(g) || 'gradient text'),
+      sourceLabel: getNodeLabel(g),
       ...measuredBox(g, measureRoot),
       content: '<img src="' + uri + '" />',
       style: {},

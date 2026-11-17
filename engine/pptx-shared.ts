@@ -83,7 +83,7 @@ export function toPlainText(html: string): string {
     .replace(/[ \t\r\n\f]+/g, ' ')
     .replace(/<br\s*\/?>(\s*)/gi, '\n')
     .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/(?:div|h[1-6]|li|tr|section|article|ul|ol|blockquote)>/gi, '\n')
   const noTags = withLineBreaks.replace(/<(?:[^>"']|"[^"]*"|'[^']*')*>/g, '')
   return decodeReferences(noTags)
     .replace(/\r\n/g, '\n')
@@ -121,6 +121,8 @@ interface RunStyle {
 
 // Elements with no closing tag. They carry no text, so they never change the style of what follows.
 const VOID_TAGS = new Set(['img', 'input', 'hr', 'wbr', 'area', 'base', 'col', 'embed', 'link', 'meta', 'source', 'track'])
+
+const BLOCK_TAGS = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'section', 'article', 'ul', 'ol', 'blockquote'])
 
 function styleOfTag(tag: string, attributes: string, inherited: RunStyle): RunStyle {
   const next = { ...inherited }
@@ -174,9 +176,12 @@ export function toTextLines(rawHtml: string): TextRun[][] {
         stack.length = at
         current = stack.length > 0 ? stack[stack.length - 1].style : { bold: false, italic: false, underline: false }
       }
-      if (tag === 'p' || tag === 'div') lines.push([])
+      // The end of a block starts a new line, unless the line is still empty.
+      if (BLOCK_TAGS.has(tag) && lines[lines.length - 1].length > 0) lines.push([])
       continue
     }
+    // A block also starts on a new line when text came before it.
+    if (BLOCK_TAGS.has(tag) && lines[lines.length - 1].length > 0) lines.push([])
     if (/\/\s*$/.test(match[3]) || VOID_TAGS.has(tag)) continue
     current = styleOfTag(tag, match[3], current)
     stack.push({ tag, style: current })

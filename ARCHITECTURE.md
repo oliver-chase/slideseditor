@@ -6,7 +6,7 @@ Owner: Engineering
 
 ## Overview
 
-The Slides Converter is a **local, zero-dependency, single-file browser tool**. It converts an HTML slide (or a PNG) into an editable PowerPoint deck: text becomes real editable text boxes, and images and gradients become separate movable picture and shape layers. There is no server, no deploy, no runtime, and no build step for the user — they open one HTML file.
+The Slides Converter is a **local, zero-dependency, single-file browser tool**. It converts an HTML slide (or a PNG) into an editable PowerPoint deck: text becomes real editable text boxes, and images and solid shapes become separate movable layers, while a slide with gradients becomes one artwork picture with the text boxes on top. There is no server, no deploy, no runtime, and no build step for the user — they open one HTML file.
 
 ## Structure
 

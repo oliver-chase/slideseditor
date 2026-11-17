@@ -4,7 +4,7 @@ A local, single-file tool that converts HTML slides into editable PowerPoint dec
 
 HTML is often the fastest way to build a precise slide design. The problem comes when that design needs to become a PowerPoint deck: exporting the slide as an image preserves the look but loses the structure. Text can no longer be edited, and individual visual elements can no longer be moved or resized.
 
-Slides Converter preserves that structure where it can. Text becomes real, editable PowerPoint text boxes. On a simple slide, solid-color boxes and images become their own movable, resizable layers. A rich slide with gradients or stacked styled boxes becomes one locked picture of the artwork with the text boxes on top, so the text stays editable and the artwork moves as one piece.
+Slides Converter preserves that structure where it can. Text becomes real, editable PowerPoint text boxes. On a simple slide, solid-color boxes and images become their own movable, resizable layers. A rich slide with gradients or stacked styled boxes becomes one picture of the artwork with the text boxes on top, so the text stays editable and the artwork moves as one piece.
 
 The browser is only the conversion step. The actual editing happens in PowerPoint, where the converted deck can be changed like any other native presentation.
 
@@ -20,7 +20,7 @@ It is built for anyone who designs slides in HTML and needs the result as a nati
 
 Open `slideeditor.html` in any modern browser.
 
-Opening the file needs no installation, no server and no build step. Conversion runs in the browser on your computer, and nothing is uploaded. The browser requests anything the imported slide names at a web address: a linked stylesheet, an `@import` file, an image or a font. A stylesheet larger than 1 MB or slower than 1.5 seconds is ignored. Pasting self-contained HTML, with its stylesheet and images embedded or supplied as files, keeps the conversion fully offline.
+Opening the file needs no installation, no server and no build step. Conversion runs in the browser on your computer, and nothing is uploaded. The browser requests anything the imported slide names at a web address: a linked stylesheet, an `@import` file, an image or a font. A stylesheet larger than 1 MB or slower than 1.5 seconds is ignored, and an image or font fetched for the artwork is limited to 5 MB and 4 seconds. Pasting self-contained HTML, with its stylesheet and images embedded or supplied as files, keeps the conversion fully offline.
 
 Import a slide in any of three ways:
 
@@ -43,7 +43,7 @@ Export the result as:
 
 The converter can preserve editability because HTML already describes a slide as separate elements.
 
-A positioned HTML element becomes its own PowerPoint layer. Text inside that element becomes its own editable text box. Images and solid shapes convert to their own layers. Gradients and stacked styled boxes are flattened into one locked artwork picture behind the text.
+A positioned HTML element becomes its own PowerPoint layer. Text inside that element becomes its own editable text box. Images and solid shapes convert to their own layers. Gradients and stacked styled boxes are flattened into one artwork picture behind the text.
 
 An image file (PNG, JPG, GIF, WebP or SVG) has no underlying structure to preserve. It therefore imports as one picture layer.
 
@@ -131,4 +131,4 @@ ARCHITECTURE.md           How the pieces fit
 
 A local, single-file tool that converts HTML slides into editable PowerPoint decks.
 
-Open `slideeditor.html`, import your slide, and export a `.pptx`. Text becomes real editable text boxes, while images, gradients, and other visual elements become separate movable and resizable PowerPoint layers.
+Open `slideeditor.html`, import your slide, and export a `.pptx`. Text becomes real editable text boxes, and the images and shapes on the slide become their own movable PowerPoint layers. A slide with gradients becomes one artwork picture with the text boxes on top.

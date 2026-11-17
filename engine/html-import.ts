@@ -1297,8 +1297,8 @@ function measureNodeRect(node: HTMLElement, root: HTMLElement): MeasuredNodeRect
   if (!Number.isFinite(rect.left) || !Number.isFinite(rootRect.left)) return {}
 
   return {
-    x: Math.max(0, rect.left - rootRect.left),
-    y: Math.max(0, rect.top - rootRect.top),
+    x: rect.left - rootRect.left,
+    y: rect.top - rootRect.top,
     width: Number.isFinite(rect.width) && rect.width > 0 ? rect.width : undefined,
     height: Number.isFinite(rect.height) && rect.height > 0 ? rect.height : undefined,
   }

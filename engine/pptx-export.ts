@@ -380,6 +380,11 @@ function toEmu(px: number, scale: number): number {
   return Math.max(0, Math.round(px * scale))
 }
 
+// A position may be negative when the source places an element past the slide edge.
+function toEmuOffset(px: number, scale: number): number {
+  return Math.round(px * scale)
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
@@ -580,8 +585,8 @@ function buildShapeXml(
     return ''
   }
 
-  const x = toEmu(component.x, scaleX)
-  const y = toEmu(component.y, scaleY)
+  const x = toEmuOffset(component.x, scaleX)
+  const y = toEmuOffset(component.y, scaleY)
   const w = toEmu(component.width, scaleX)
   const h = toEmu(defaultHeightForComponent(component, text), scaleY)
 
@@ -675,8 +680,8 @@ function buildSlideXml(
       const decoded = decodeDataUriImage(imageUri, warnings, componentRef)
       if (decoded) {
         const rId = registerImage(decoded)
-        const x = toEmu(component.x, scaleX)
-        const y = toEmu(component.y, scaleY)
+        const x = toEmuOffset(component.x, scaleX)
+        const y = toEmuOffset(component.y, scaleY)
         const w = toEmu(component.width, scaleX)
         const imageHeight = typeof component.height === 'number' && component.height > 0 ? component.height : component.width
         const h = toEmu(imageHeight, scaleY)

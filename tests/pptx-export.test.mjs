@@ -12,8 +12,8 @@ vm.createContext(sandbox)
 vm.runInContext(bundle, sandbox)
 const E = sandbox.window.SlideEngine
 
-function slideXml(content, style = {}) {
-  const component = { id: 't1', type: 'text', content, x: 40, y: 40, width: 400, height: 60, locked: false, visible: true, sourceLabel: 'test', style }
+function slideXml(content, style = {}, x = 40, y = 40) {
+  const component = { id: 't1', type: 'text', content, x, y, width: 400, height: 60, locked: false, visible: true, sourceLabel: 'test', style }
   const document = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [component] })
   return E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Test', document }]).blob.arrayBuffer().then((ab) => {
     const buf = Buffer.from(ab)
@@ -69,5 +69,8 @@ assert.equal(pngResult.warnings.length, 0, 'a base64 PNG exports with no warning
 
 const svgResult = exportImage('data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E')
 assert.ok(svgResult.warnings.some((w) => w.includes('img1') && w.includes('image/svg+xml')), 'an SVG with a utf8 parameter is reported by component, not dropped silently')
+
+const offCanvas = await slideXml('Off canvas', {}, -80, -30)
+assert.ok(offCanvas.includes('<a:off x="-762000" y="-285750"/>'), 'a negative position is kept, not clamped to 0')
 
 console.log('pptx-export tests passed')

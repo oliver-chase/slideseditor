@@ -1846,8 +1846,8 @@ function measureNodeRect(node             , root             )                  
   if (!Number.isFinite(rect.left) || !Number.isFinite(rootRect.left)) return {}
 
   return {
-    x: Math.max(0, rect.left - rootRect.left),
-    y: Math.max(0, rect.top - rootRect.top),
+    x: rect.left - rootRect.left,
+    y: rect.top - rootRect.top,
     width: Number.isFinite(rect.width) && rect.width > 0 ? rect.width : undefined,
     height: Number.isFinite(rect.height) && rect.height > 0 ? rect.height : undefined,
   }
@@ -3446,6 +3446,11 @@ function toEmu(px        , scale        )         {
   return Math.max(0, Math.round(px * scale))
 }
 
+// A position may be negative when the source places an element past the slide edge.
+function toEmuOffset(px        , scale        )         {
+  return Math.round(px * scale)
+}
+
 function clamp(value        , min        , max        )         {
   return Math.min(max, Math.max(min, value))
 }
@@ -3646,8 +3651,8 @@ function buildShapeXml(
     return ''
   }
 
-  const x = toEmu(component.x, scaleX)
-  const y = toEmu(component.y, scaleY)
+  const x = toEmuOffset(component.x, scaleX)
+  const y = toEmuOffset(component.y, scaleY)
   const w = toEmu(component.width, scaleX)
   const h = toEmu(defaultHeightForComponent(component, text), scaleY)
 
@@ -3741,8 +3746,8 @@ function buildSlideXml(
       const decoded = decodeDataUriImage(imageUri, warnings, componentRef)
       if (decoded) {
         const rId = registerImage(decoded)
-        const x = toEmu(component.x, scaleX)
-        const y = toEmu(component.y, scaleY)
+        const x = toEmuOffset(component.x, scaleX)
+        const y = toEmuOffset(component.y, scaleY)
         const w = toEmu(component.width, scaleX)
         const imageHeight = typeof component.height === 'number' && component.height > 0 ? component.height : component.width
         const h = toEmu(imageHeight, scaleY)

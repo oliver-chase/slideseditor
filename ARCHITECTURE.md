@@ -1,4 +1,4 @@
-# Architecture — Slides Converter
+# Architecture of the slides converter
 
 Status: Stable
 Last updated: 2026-07-17 (CANVAS-ROOT-1); 2026-07-16 (REPAIR-1, SCALE-1, RASTER-1, drag-and-drop, Native preset)
@@ -48,13 +48,13 @@ No npm install, no bundler dependency, no deploy.
 
 ## Scope
 
-- **Input:** HTML (primary — enables text/image separation) or PNG/JPG (single picture layer).
-- **Output:** PPTX (primary) or HTML.
-- **Canvas presets:** Native (preserve source dimensions), 16:9, and 1:1 (reshape options).
-- Converter, not editor: no on-page drag/resize/inline-edit. Import via file picker or drag-and-drop.
+- **Input:** HTML (primary — enables text/image separation) or PNG/JPG (single picture layer)
+- **Output:** PPTX (primary) or HTML
+- **Canvas presets:** Native (preserve source dimensions), 16:9, and 1:1 (reshape options)
+- Converter, not editor: no on-page drag/resize/inline-edit. Import via file picker or drag-and-drop
 
 ## Key constraints
 
-- Zero runtime dependencies; the output must stay a single self-contained HTML file.
-- Rebuild `slideeditor.html` after any change to `engine/*.ts` or `src/shell.html`.
-- Engine PPTX/HTML paths are node-headless testable (strip types, run, unzip, assert). `html-import.ts` and the shell need a real browser (DOMParser/iframe/getComputedStyle) — verify with Playwright against `file://slideeditor.html` via the `window.__slidesTest` hook.
+- Zero runtime dependencies; the output must stay a single self-contained HTML file
+- Rebuild `slideeditor.html` after any change to `engine/*.ts` or `src/shell.html`
+- Engine PPTX/HTML paths are node-headless testable (strip types, run, unzip, assert). `html-import.ts` and the shell need a real browser (DOMParser/iframe/getComputedStyle) — verify with Playwright against `file://slideeditor.html` via the `window.__slidesTest` hook

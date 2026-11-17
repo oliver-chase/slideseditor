@@ -8,7 +8,7 @@ Slides Converter preserves that structure. Text becomes real, editable PowerPoin
 
 The browser is only the conversion step. The actual editing happens in PowerPoint, where the converted deck can be changed like any other native presentation.
 
-It is built for anyone who designs slides in HTML and needs the result as a native, editable PowerPoint deck instead of a flat screenshot.
+It is built for anyone who designs slides in HTML and needs the result as a native, editable PowerPoint deck.
 
 ## Convert a slide
 
@@ -23,20 +23,20 @@ It runs entirely locally:
 
 Import a slide in any of three ways:
 
-* Paste the HTML directly into the tool.
-* Choose an `.html` file and its `.css`.
-* Drag a file onto the page.
+* Paste the HTML directly into the tool
+* Choose an `.html` file and its `.css`
+* Drag a file onto the page
 
 Then choose the canvas:
 
-* Native — the default; keeps the source's original dimensions so the slide does not distort.
-* 16:9 — standard widescreen presentation.
-* 1:1 — square canvas.
+* Native — the default; keeps the source's original dimensions so the slide does not distort
+* 16:9 — standard widescreen presentation
+* 1:1 — square canvas
 
 Export the result as:
 
-* PPTX — the primary output, with editable PowerPoint layers.
-* HTML — useful for sharing or inspecting the converted result.
+* PPTX — the primary output, with editable PowerPoint layers
+* HTML — useful for sharing or inspecting the converted result
 
 ## Why HTML works
 
@@ -84,17 +84,17 @@ node scripts/build-bundle.mjs
 
 ## What it supports
 
-* HTML input — converted into editable PowerPoint text boxes, images, and shapes.
-* PNG/JPG input — imported as a single image layer.
-* PPTX export — the primary output.
-* HTML export — for sharing or inspection.
-* Native canvas — preserves the source dimensions.
-* 16:9 canvas — standard widescreen format.
-* 1:1 canvas — square format.
+* HTML input — converted into editable PowerPoint text boxes, images, and shapes
+* PNG/JPG input — imported as a single image layer
+* PPTX export — the primary output
+* HTML export — for sharing or inspection
+* Native canvas — preserves the source dimensions
+* 16:9 canvas — standard widescreen format
+* 1:1 canvas — square format
 
 ## What it does not do
 
-Slides Converter is a converter, not an editor.
+Slides Converter converts slides and leaves editing to PowerPoint.
 
 There is deliberately no on-page drag, resize, or inline editing. The browser converts the source; PowerPoint is where the resulting slide is edited and presented.
 

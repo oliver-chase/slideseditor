@@ -57,10 +57,6 @@ export function validateHtmlImportInput(html: string): SlideImportFailure | null
   return null
 }
 
-export function validatePastedHtml(html: string): SlideImportFailure | null {
-  return validateHtmlImportInput(html)
-}
-
 export function validateParsedResult(result: SlideImportResult): SlideImportFailure | null {
   if (result.components.length === 0) {
     return {

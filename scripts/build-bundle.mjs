@@ -34,12 +34,10 @@ const ENGINE_FILES = [
 const PUBLIC_API = [
   'convertHtmlToSlideComponents',
   'convertSlideComponentsToHtml',
-  'convertSlideDocumentToHtml',
   'convertSlideDocumentsToPptx',
   'createSlideDocument',
   'validateImportFile',
   'validateHtmlImportInput',
-  'validatePastedHtml',
   'validateParsedResult',
   'classifyImportError',
   'selectImportFiles',

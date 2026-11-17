@@ -1,4 +1,4 @@
-import type { SlideCanvas, SlideComponent, SlideDocument } from './types'
+import type { SlideCanvas, SlideComponent } from './types'
 
 function escapeAttribute(value: string): string {
   return value
@@ -152,30 +152,4 @@ export function convertSlideComponentsToHtml(input: {
   const footer = '</body></html>'
 
   return `${header}\n${rootOpen}\n${body}\n${rootClose}\n${footer}`
-}
-
-export function convertSlideDocumentToHtml(input: {
-  document: SlideDocument
-  metadata?: {
-    slideId?: string
-    revision?: number
-    source?: string
-    exportedAt?: string
-  }
-}): string {
-  const primarySlide = input.document.deck.slides[0]
-  const canvas: SlideCanvas = {
-    width: input.document.deck.width,
-    height: input.document.deck.height,
-    ...(primarySlide?.background?.fill ? { background: primarySlide.background.fill } : {}),
-  }
-
-  return convertSlideComponentsToHtml({
-    canvas,
-    components: Array.isArray(primarySlide?.elements) ? primarySlide.elements : [],
-    metadata: {
-      ...input.metadata,
-      slideId: input.metadata?.slideId || primarySlide?.id || input.document.deck.id,
-    },
-  })
 }

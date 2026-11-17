@@ -1,5 +1,5 @@
 import { createSlideDocument } from './document'
-import type { SlideComponent, SlideComponentStyle, SlideComponentType, SlideImportResult } from './types'
+import type { SlideCanvas, SlideComponent, SlideComponentStyle, SlideComponentType, SlideImportResult } from './types'
 
 const DEFAULT_CANVAS_WIDTH = 1920
 const DEFAULT_CANVAS_HEIGHT = 1080
@@ -635,11 +635,8 @@ function isPxLike(length: ParsedLength): boolean {
 }
 
 function parsePositivePx(rawValue: string | null | undefined): number | undefined {
-  const parsed = parseLength(rawValue)
-  if (!parsed) return undefined
-  if (!isPxLike(parsed)) return undefined
-  if (parsed.value <= 0) return undefined
-  return parsed.value
+  const px = parsePxLength(rawValue ?? undefined)
+  return px !== undefined && px > 0 ? px : undefined
 }
 
 function estimateNodeAreaFromDeclaredSize(node: HTMLElement): number {
@@ -1932,62 +1929,411 @@ function escapeHtmlText(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
-export async function convertHtmlToSlideComponents(html: string): Promise<SlideImportResult> {
-  const warnings: string[] = []
-  const buildEmergencyFallbackImportResult = (reason: string): SlideImportResult => {
-    const parser = new DOMParser()
-    const doc = parser.parseFromString(html, 'text/html')
-    const emergencyRoot = getCanvasRoot(doc) || doc.body
-    const rootStyle = emergencyRoot ? parseInlineStyle(emergencyRoot.getAttribute('style') || '') : {}
-    const fallbackCanvas = {
-      width: parseCanvasPx(rootStyle.width, 'width', warnings) || DEFAULT_CANVAS_WIDTH,
-      height: parseCanvasPx(rootStyle.height, 'height', warnings) || DEFAULT_CANVAS_HEIGHT,
-    }
-    const sanitizedRoot = emergencyRoot ? buildSanitizedContentNode(emergencyRoot) : null
-    const fallbackContent = sanitizedRoot?.innerHTML.trim() || sanitizedRoot?.outerHTML.trim() || html.trim()
-    const fallbackComponents: SlideComponent[] = [{
-      id: 'import-001',
-      type: 'panel',
-      sourceLabel: `${emergencyRoot ? getNodeLabel(emergencyRoot) : 'html-root'} (fallback)`,
-      x: 0,
-      y: 0,
-      width: fallbackCanvas.width,
-      height: fallbackCanvas.height,
-      content: fallbackContent,
-      style: extractStyle(rootStyle, emergencyRoot ? readComputedStyleSafe(emergencyRoot) : null, warnings, 'fallback-root'),
-      locked: true,
-      visible: true,
-    }]
-    warnings.push(`Import parser fallback engaged (${reason}); loaded simplified locked layer.`)
-    const uniqueWarnings = Array.from(new Set(warnings))
-    return {
-      document: createSlideDocument({
-        canvas: fallbackCanvas,
-        components: fallbackComponents,
-        warnings: uniqueWarnings,
-      }),
-      canvas: fallbackCanvas,
-      components: fallbackComponents,
-      warnings: uniqueWarnings,
+function finishImport(canvas: SlideCanvas, components: SlideComponent[], warnings: string[]): SlideImportResult {
+  const uniqueWarnings = Array.from(new Set(warnings))
+  return {
+    document: createSlideDocument({ canvas, components, warnings: uniqueWarnings }),
+    canvas,
+    components,
+    warnings: uniqueWarnings,
+  }
+}
+
+// One locked layer that stands in for the whole slide when the full import cannot run.
+// `root` is null only on the emergency path, where the slide could not even be parsed.
+function buildFallbackImportResult(
+  root: HTMLElement | null,
+  html: string | null,
+  reason: string,
+  warnings: string[],
+): SlideImportResult {
+  const emergency = html !== null
+  const rootStyle = root ? parseInlineStyle(root.getAttribute('style') || '') : {}
+  const attrWidth = !emergency && root ? root.getAttribute('width') ?? undefined : undefined
+  const attrHeight = !emergency && root ? root.getAttribute('height') ?? undefined : undefined
+  const canvas = {
+    width: parseCanvasPx(rootStyle.width ?? attrWidth, 'width', warnings) || DEFAULT_CANVAS_WIDTH,
+    height: parseCanvasPx(rootStyle.height ?? attrHeight, 'height', warnings) || DEFAULT_CANVAS_HEIGHT,
+  }
+  const sanitizedRoot = root ? buildSanitizedContentNode(root) : null
+  const content = sanitizedRoot?.innerHTML.trim() || sanitizedRoot?.outerHTML.trim() || (html ? html.trim() : '')
+  const label = root ? getNodeLabel(root) : 'html-root'
+  const components: SlideComponent[] = [{
+    id: 'import-001',
+    type: 'panel',
+    sourceLabel: `${label} (fallback)`,
+    x: 0,
+    y: 0,
+    width: canvas.width,
+    height: canvas.height,
+    content,
+    style: extractStyle(rootStyle, root ? readComputedStyleSafe(root) : null, warnings, emergency ? 'fallback-root' : label),
+    locked: true,
+    visible: true,
+  }]
+  warnings.push(
+    emergency
+      ? `Import parser fallback engaged (${reason}); loaded simplified locked layer.`
+      : `High-fidelity import mode failed (${reason}); loaded simplified fallback layer.`,
+  )
+  return finishImport(canvas, components, warnings)
+}
+
+function warnAboutUnsupportedContent(root: HTMLElement, styleSourceText: string, warnings: string[]): void {
+  if (styleSourceText.includes('@keyframes') || /\banimation\s*:/.test(styleSourceText)) {
+    warnings.push('Detected CSS animations; animation effects are not imported and static styles are used.')
+  }
+  if (root.querySelector('canvas')) {
+    warnings.push('Detected canvas elements; canvas pixel content is not extracted into editable layers.')
+  }
+  if (root.querySelector('video')) {
+    warnings.push('Detected video elements; video playback layers are not imported as editable slide components.')
+  }
+}
+
+interface DeclaredCanvas {
+  explicitWidth: number | undefined
+  explicitHeight: number | undefined
+  computedWidth: number | undefined
+  computedHeight: number | undefined
+  measuredRootRect: MeasuredNodeRect
+  rootStyle: Record<string, string>
+  computedRootStyle: CSSStyleDeclaration | null
+}
+
+function readDeclaredCanvas(root: HTMLElement, renderSnapshot: RenderSnapshot, warnings: string[]): DeclaredCanvas {
+  const rootStyle = parseInlineStyle(root.getAttribute('style') || '')
+  const measuredRootRect = renderSnapshot.root ? measureNodeRect(renderSnapshot.root, renderSnapshot.root) : {}
+  const explicitWidth = parseCanvasPx(rootStyle.width ?? root.getAttribute('width') ?? undefined, 'width', warnings)
+  const explicitHeight = parseCanvasPx(rootStyle.height ?? root.getAttribute('height') ?? undefined, 'height', warnings)
+  const computedRootStyle = readComputedStyleSafe(renderSnapshot.root || root)
+  return {
+    explicitWidth,
+    explicitHeight,
+    computedWidth: parseLength(computedRootStyle?.width || '')?.value,
+    computedHeight: parseLength(computedRootStyle?.height || '')?.value,
+    measuredRootRect,
+    rootStyle,
+    computedRootStyle,
+  }
+}
+
+function resolveCanvasBackground(
+  doc: Document,
+  renderSnapshot: RenderSnapshot,
+  declared: DeclaredCanvas,
+): string | undefined {
+  const sourceBodyStyle = doc.body ? parseInlineStyle(doc.body.getAttribute('style') || '') : {}
+  const sourceHtmlStyle = doc.documentElement ? parseInlineStyle(doc.documentElement.getAttribute('style') || '') : {}
+  const renderBody = renderSnapshot.root?.ownerDocument?.body
+  const renderHtml = renderSnapshot.root?.ownerDocument?.documentElement
+  const computedBodyStyle = renderBody ? readComputedStyleSafe(renderBody) : null
+  const computedHtmlStyle = renderHtml ? readComputedStyleSafe(renderHtml) : null
+  const rootBackground = resolveComputedBackground(declared.computedRootStyle, declared.rootStyle)
+  const bodyBackground = resolveComputedBackground(computedBodyStyle, sourceBodyStyle)
+  const htmlBackground = resolveComputedBackground(computedHtmlStyle, sourceHtmlStyle)
+  return normalizeBackgroundFill(
+    rootBackground.backgroundFill ||
+    rootBackground.backgroundColor ||
+    bodyBackground.backgroundFill ||
+    bodyBackground.backgroundColor ||
+    htmlBackground.backgroundFill ||
+    htmlBackground.backgroundColor,
+  )
+}
+
+type ImportMode = 'absolute' | 'flow' | 'fallback' | 'root-fallback'
+
+interface NodeSelection {
+  absoluteNodes: HTMLElement[]
+  flowNodes: HTMLElement[]
+  nodes: HTMLElement[]
+  importMode: ImportMode
+}
+
+// Prefer absolutely positioned elements, then flow-layout elements, then top-level children, then the root.
+function selectImportNodes(allNodes: HTMLElement[], renderSnapshot: RenderSnapshot, root: HTMLElement): NodeSelection {
+  const renderRoot = renderSnapshot.root || root
+  const renderNodeOf = (node: HTMLElement) => renderSnapshot.nodesById.get(node.getAttribute('data-import-node-id') || '') || node
+  const absoluteNodes = allNodes.filter((node) => shouldImportNode(node, readComputedStyleSafe(renderNodeOf(node))))
+  const fallbackNodes = Array.from(root.children).filter((node): node is HTMLElement => node instanceof HTMLElement)
+  const flowNodes = allNodes.filter((node) => {
+    const renderNode = renderNodeOf(node)
+    return shouldImportFlowNode(node, readComputedStyleSafe(renderNode), measureNodeRect(renderNode, renderRoot))
+  })
+  if (absoluteNodes.length > 0) return { absoluteNodes, flowNodes, nodes: absoluteNodes, importMode: 'absolute' }
+  if (flowNodes.length > 0) return { absoluteNodes, flowNodes, nodes: flowNodes, importMode: 'flow' }
+  if (fallbackNodes.length > 0) return { absoluteNodes, flowNodes, nodes: fallbackNodes, importMode: 'fallback' }
+  return { absoluteNodes, flowNodes, nodes: [root], importMode: 'root-fallback' }
+}
+
+function extractPseudoLayers(
+  styleSources: string,
+  renderSnapshot: RenderSnapshot,
+  root: HTMLElement,
+  warnings: string[],
+): Map<string, SlideComponent[]> {
+  const pseudoDescriptors = parsePseudoLayerDescriptors(styleSources, root)
+  const pseudoByHost = extractPseudoComponents(pseudoDescriptors, renderSnapshot, root, renderSnapshot.root || root, warnings)
+  const pseudoLayerCount = Array.from(pseudoByHost.values()).reduce((total, entries) => total + entries.length, 0)
+  if (pseudoDescriptors.length > 0 && pseudoLayerCount === 0) {
+    warnings.push('Pseudo-element selectors were detected but could not be resolved to rendered layers.')
+  } else if (pseudoLayerCount > 0) {
+    warnings.push(
+      'Extracted ' + pseudoLayerCount + ' pseudo-element layer' + (pseudoLayerCount === 1 ? '' : 's') + ' from CSS.',
+    )
+  }
+  return pseudoByHost
+}
+
+function resolveSourceCanvasSize(
+  declared: DeclaredCanvas,
+  contentBounds: ContentBounds,
+  warnings: string[],
+): { width: number; height: number } {
+  const hasDeclaredWidth = declared.explicitWidth !== undefined || typeof declared.computedWidth === 'number'
+  const hasDeclaredHeight = declared.explicitHeight !== undefined || typeof declared.computedHeight === 'number'
+
+  let width = declared.explicitWidth
+    ?? (typeof declared.computedWidth === 'number' ? canonicalCanvasValue(declared.computedWidth, DEFAULT_CANVAS_WIDTH, warnings, 'width', 'computed style') : undefined)
+    ?? canonicalCanvasValue(declared.measuredRootRect.width, DEFAULT_CANVAS_WIDTH, warnings, 'width', 'measured root')
+  let height = declared.explicitHeight
+    ?? (typeof declared.computedHeight === 'number' ? canonicalCanvasValue(declared.computedHeight, DEFAULT_CANVAS_HEIGHT, warnings, 'height', 'computed style') : undefined)
+    ?? canonicalCanvasValue(declared.measuredRootRect.height, DEFAULT_CANVAS_HEIGHT, warnings, 'height', 'measured root')
+
+  width = clampAutoImportCanvasAxis(width, 'width', warnings)
+  height = clampAutoImportCanvasAxis(height, 'height', warnings)
+
+  if (!hasDeclaredWidth && contentBounds.width && width > contentBounds.width * CANVAS_AUTO_SCALE_RATIO_THRESHOLD) {
+    width = Math.max(contentBounds.width, DEFAULT_CANVAS_WIDTH)
+    warnings.push(
+      'Detected oversized root width during import; normalized canvas width using layer bounds to avoid compressed output.',
+    )
+  }
+  if (!hasDeclaredHeight && contentBounds.height && height > contentBounds.height * CANVAS_AUTO_SCALE_RATIO_THRESHOLD) {
+    height = Math.max(contentBounds.height, DEFAULT_CANVAS_HEIGHT)
+    warnings.push(
+      'Detected oversized root height during import; normalized canvas height using layer bounds to avoid compressed output.',
+    )
+  }
+  return { width, height }
+}
+
+function warnAboutImportMode(selection: NodeSelection, size: { width: number; height: number }, warnings: string[]): void {
+  const { absoluteNodes, flowNodes, nodes, importMode } = selection
+  if (absoluteNodes.length === 0) {
+    if (flowNodes.length > 0) {
+      warnings.push('No absolutely positioned elements found; imported flow-layout nodes using computed bounds.')
+    } else {
+      warnings.push('No absolutely positioned elements found; imported top-level nodes as fallback.')
     }
   }
+  if (size.width !== DEFAULT_CANVAS_WIDTH || size.height !== DEFAULT_CANVAS_HEIGHT) {
+    warnings.push(
+      'Detected source canvas ' + size.width + 'x' + size.height + ' (canonical coordinates preserved).',
+    )
+  }
+  if (importMode === 'fallback' && nodes.length > 0) {
+    warnings.push(`Imported ${nodes.length} fallback node${nodes.length === 1 ? '' : 's'} as locked layers for visual fidelity.`)
+  }
+  if (importMode === 'root-fallback') {
+    warnings.push('No importable child layers were detected; imported the slide root as a locked fallback layer.')
+  }
+}
 
-  let normalizedHtml = ''
+// In absolute mode, split text nested inside a positioned container into its own
+// text-box layers (each keeps its font/size/color) instead of collapsing the whole
+// container into one uniform text blob. The container is then imported as a
+// background/shape layer with the extracted text removed.
+function planNestedTextSplit(
+  selection: NodeSelection,
+  allNodes: HTMLElement[],
+  renderSnapshot: RenderSnapshot,
+  root: HTMLElement,
+  warnings: string[],
+): { nodesForBuild: HTMLElement[]; strippedIdsByContainer: Map<string, Set<string>> } {
+  const { absoluteNodes, nodes } = selection
+  const strippedIdsByContainer = new Map<string, Set<string>>()
+  let nodesForBuild = nodes
+  const absoluteIdSet = new Set(absoluteNodes.map((entry) => entry.getAttribute('data-import-node-id') || ''))
+  const extraNodes: HTMLElement[] = []
+  const seenExtra = new Set<string>()
+  for (const container of absoluteNodes) {
+    const containerId = container.getAttribute('data-import-node-id') || ''
+    const leaves = collectNestedTextLeaves(container, absoluteIdSet, renderSnapshot, root)
+    const stripSet = new Set<string>()
+    for (const leaf of leaves) {
+      const leafId = leaf.getAttribute('data-import-node-id') || ''
+      if (!leafId || seenExtra.has(leafId)) continue
+      seenExtra.add(leafId)
+      stripSet.add(leafId)
+      extraNodes.push(leaf)
+    }
+    // Strip nested positioned descendants: each becomes its own component, so
+    // leaving it inside this container's content would render its text twice.
+    for (const descendant of Array.from(container.querySelectorAll<HTMLElement>('[data-import-node-id]'))) {
+      const descId = descendant.getAttribute('data-import-node-id') || ''
+      if (descId && descId !== containerId && absoluteIdSet.has(descId)) stripSet.add(descId)
+    }
+    if (stripSet.size > 0) strippedIdsByContainer.set(containerId, stripSet)
+  }
+  if (extraNodes.length > 0) {
+    const orderIndex = new Map(allNodes.map((entry, i) => [entry, i] as const))
+    nodesForBuild = [...absoluteNodes, ...extraNodes].sort(
+      (a, b) => (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0),
+    )
+    warnings.push(
+      'Split ' + extraNodes.length + ' nested text element' + (extraNodes.length === 1 ? '' : 's') + ' into separate editable text layers.',
+    )
+  }
+  return { nodesForBuild, strippedIdsByContainer }
+}
+
+// Pick the x and y of a node from the first source that has one: its measured box
+// (when nested), its own left/top, its margins, computed style, then the measured box.
+function resolveNodePosition(
+  renderNode: HTMLElement,
+  renderRoot: HTMLElement,
+  styleMap: Record<string, string>,
+  computedStyle: CSSStyleDeclaration | null,
+  measured: MeasuredNodeRect,
+  canvas: { width: number; height: number },
+  nodeLabel: string,
+  warnings: string[],
+): { x: number; y: number } {
+  const explicitLeft = parseStylePositionPx(styleMap, 'left', nodeLabel, warnings, canvas.width)
+  const explicitTop = parseStylePositionPx(styleMap, 'top', nodeLabel, warnings, canvas.height)
+  const explicitMarginLeft = parseStyleOffsetPx(styleMap, 'margin-left', nodeLabel, warnings, canvas.width)
+  const explicitMarginTop = parseStyleOffsetPx(styleMap, 'margin-top', nodeLabel, warnings, canvas.height)
+  const computedLeft = parseComputedPositionPx(computedStyle?.left, 'left', nodeLabel, warnings, canvas.width)
+  const computedTop = parseComputedPositionPx(computedStyle?.top, 'top', nodeLabel, warnings, canvas.height)
+  const computedMarginLeft = parseStyleOffsetPx({ 'margin-left': computedStyle?.marginLeft || '' }, 'margin-left', nodeLabel, warnings, canvas.width)
+  const computedMarginTop = parseStyleOffsetPx({ 'margin-top': computedStyle?.marginTop || '' }, 'margin-top', nodeLabel, warnings, canvas.height)
+  const transformOffsets = parseTransformOffsets(styleMap.transform, nodeLabel, warnings)
+  const layoutX = Number.isFinite(renderNode.offsetLeft) ? renderNode.offsetLeft : undefined
+  const layoutY = Number.isFinite(renderNode.offsetTop) ? renderNode.offsetTop : undefined
+  const measuredX = typeof measured.x === 'number' && Number.isFinite(measured.x) ? measured.x : undefined
+  const measuredY = typeof measured.y === 'number' && Number.isFinite(measured.y) ? measured.y : undefined
+  const measuredOrLayoutX = measuredX !== undefined
+    ? ((measuredX === 0 && layoutX !== undefined && layoutX > 0) ? layoutX : measuredX)
+    : layoutX
+  const measuredOrLayoutY = measuredY !== undefined
+    ? ((measuredY === 0 && layoutY !== undefined && layoutY > 0) ? layoutY : measuredY)
+    : layoutY
+  const hasNestedRenderParent = Boolean(
+    renderRoot &&
+    renderNode.parentElement &&
+    renderNode.parentElement !== renderRoot &&
+    renderRoot.contains(renderNode.parentElement),
+  )
+  const preferredMeasuredX = hasNestedRenderParent ? measuredOrLayoutX : undefined
+  const preferredMeasuredY = hasNestedRenderParent ? measuredOrLayoutY : undefined
+  const baseX = preferredMeasuredX ?? explicitLeft ?? explicitMarginLeft ?? computedLeft ?? computedMarginLeft ?? measuredOrLayoutX ?? 0
+  const baseY = preferredMeasuredY ?? explicitTop ?? explicitMarginTop ?? computedTop ?? computedMarginTop ?? measuredOrLayoutY ?? 0
+  const baseXUsesMeasuredRect = preferredMeasuredX !== undefined || (
+    explicitLeft === undefined &&
+    explicitMarginLeft === undefined &&
+    computedLeft === undefined &&
+    computedMarginLeft === undefined &&
+    measuredOrLayoutX !== undefined
+  )
+  const baseYUsesMeasuredRect = preferredMeasuredY !== undefined || (
+    explicitTop === undefined &&
+    explicitMarginTop === undefined &&
+    computedTop === undefined &&
+    computedMarginTop === undefined &&
+    measuredOrLayoutY !== undefined
+  )
+  const transformX = baseXUsesMeasuredRect && measuredX !== undefined ? 0 : transformOffsets.x
+  const transformY = baseYUsesMeasuredRect && measuredY !== undefined ? 0 : transformOffsets.y
+  return { x: baseX + transformX, y: baseY + transformY }
+}
+
+interface NodeBuildContext {
+  renderSnapshot: RenderSnapshot
+  root: HTMLElement
+  canvas: { width: number; height: number }
+  importMode: ImportMode
+  strippedIdsByContainer: Map<string, Set<string>>
+  pseudoByHost: Map<string, SlideComponent[]>
+  warnings: string[]
+}
+
+// Turn one imported node into its component, preceded by any pseudo-element layers it hosts.
+function buildNodeComponents(node: HTMLElement, index: number, ctx: NodeBuildContext): SlideComponent[] {
+  const { renderSnapshot, root, canvas, importMode, warnings } = ctx
+  const styleMap = parseInlineStyle(node.getAttribute('style') || '')
+  const nodeLabel = getNodeLabel(node)
+  const nodeId = node.getAttribute('data-import-node-id') || ''
+  const renderNode = renderSnapshot.nodesById.get(nodeId) || node
+  const renderRoot = renderSnapshot.root || root
+  const computedStyle = readComputedStyleSafe(renderNode)
+  const measured = measureNodeRect(renderNode, renderRoot)
+  const sanitizedNode = buildSanitizedContentNode(renderNode)
+  const stripSet = ctx.strippedIdsByContainer.get(nodeId)
+  if (stripSet) {
+    for (const stripId of stripSet) {
+      sanitizedNode.querySelectorAll('[data-import-node-id="' + stripId + '"]').forEach((el) => el.remove())
+    }
+  }
+  const isSvg = node.tagName.toLowerCase() === 'svg'
+  const content = isSvg
+    ? resolveSvgImageFallback(sanitizedNode, nodeLabel, warnings)
+    : stripSet
+      ? sanitizedNode.innerHTML.trim()
+      : (sanitizedNode.innerHTML.trim() || sanitizedNode.outerHTML.trim())
+
+  const position = resolveNodePosition(renderNode, renderRoot, styleMap, computedStyle, measured, canvas, nodeLabel, warnings)
+  const baseWidth = measured.width
+    ?? parseStylePx(styleMap, 'width', nodeLabel, warnings)
+    ?? parseAttrPx(node.getAttribute('width'), 'width', nodeLabel, warnings)
+    ?? 320
+  const baseHeight = measured.height
+    ?? parseStylePx(styleMap, 'height', nodeLabel, warnings)
+    ?? parseAttrPx(node.getAttribute('height'), 'height', nodeLabel, warnings)
+
+  const extractedStyle = extractStyle(styleMap, computedStyle, warnings, nodeLabel)
+  const fallbackLocked = importMode === 'fallback' || importMode === 'root-fallback'
+  const components: SlideComponent[] = []
+  const pseudoForHost = ctx.pseudoByHost.get(nodeId)
+  if (pseudoForHost) {
+    components.push(
+      ...pseudoForHost.map((entry, pseudoIndex) => ({
+        ...entry,
+        id: `import-${String(index + 1).padStart(3, '0')}-${pseudoIndex + 1}-${entry.sourceLabel?.replace(/[^a-z0-9-]/gi, '-') || 'pseudo'}`,
+      })),
+    )
+  }
+  components.push({
+    id: 'import-' + String(index + 1).padStart(3, '0'),
+    type: inferType(node),
+    sourceLabel: fallbackLocked ? `${nodeLabel} (fallback)` : nodeLabel,
+    x: asCanonicalDimension(position.x),
+    y: asCanonicalDimension(position.y),
+    width: asCanonicalDimension(baseWidth),
+    height: asCanonicalDimensionOptional(baseHeight),
+    content,
+    style: extractedStyle,
+    locked: fallbackLocked,
+    visible: true,
+  })
+  return components
+}
+
+export async function convertHtmlToSlideComponents(html: string): Promise<SlideImportResult> {
+  const warnings: string[] = []
+
   let doc: Document
   let root: HTMLElement | null = null
   try {
-    normalizedHtml = normalizeImportedHtmlMarkup(html, warnings)
-    const parser = new DOMParser()
-    doc = parser.parseFromString(normalizedHtml, 'text/html')
+    const normalizedHtml = normalizeImportedHtmlMarkup(html, warnings)
+    doc = new DOMParser().parseFromString(normalizedHtml, 'text/html')
     root = getCanvasRoot(doc)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error || 'normalize_or_parse_failed')
-    return buildEmergencyFallbackImportResult(message)
+    return buildEmergencyFallback(html, message, warnings)
   }
-
-  if (!root) {
-    return buildEmergencyFallbackImportResult('slide_root_not_detected')
-  }
+  if (!root) return buildEmergencyFallback(html, 'slide_root_not_detected', warnings)
 
   root.setAttribute(IMPORT_ROOT_MARKER_ATTR, IMPORT_ROOT_MARKER_VALUE)
   root.setAttribute('data-import-node-id', IMPORT_ROOT_NODE_ID)
@@ -2004,352 +2350,66 @@ export async function convertHtmlToSlideComponents(html: string): Promise<SlideI
     warnings.push(`Stylesheet inlining failed (${message}); continuing with available styles.`)
   }
   const styleSources = inlinedStyleChunks.map(({ cssText }) => cssText).join('\n')
-  const styleSourceText = inlinedStyleChunks.map(({ cssText }) => cssText).join('\n').toLowerCase()
-  if (styleSourceText.includes('@keyframes') || /\banimation\s*:/.test(styleSourceText)) {
-    warnings.push('Detected CSS animations; animation effects are not imported and static styles are used.')
-  }
-  if (root.querySelector('canvas')) {
-    warnings.push('Detected canvas elements; canvas pixel content is not extracted into editable layers.')
-  }
-  if (root.querySelector('video')) {
-    warnings.push('Detected video elements; video playback layers are not imported as editable slide components.')
-  }
-  const buildFallbackImportResult = (reason: string): SlideImportResult => {
-    const rootStyle = parseInlineStyle(root.getAttribute('style') || '')
-    const fallbackCanvas = {
-      width: parseCanvasPx(rootStyle.width ?? root.getAttribute('width') ?? undefined, 'width', warnings) || DEFAULT_CANVAS_WIDTH,
-      height: parseCanvasPx(rootStyle.height ?? root.getAttribute('height') ?? undefined, 'height', warnings) || DEFAULT_CANVAS_HEIGHT,
-    }
-    const sanitizedRoot = buildSanitizedContentNode(root)
-    const fallbackComponents: SlideComponent[] = [{
-      id: 'import-001',
-      type: 'panel',
-      sourceLabel: `${getNodeLabel(root)} (fallback)`,
-      x: 0,
-      y: 0,
-      width: fallbackCanvas.width,
-      height: fallbackCanvas.height,
-      content: sanitizedRoot.innerHTML.trim() || sanitizedRoot.outerHTML.trim(),
-      style: extractStyle(rootStyle, readComputedStyleSafe(root), warnings, getNodeLabel(root)),
-      locked: true,
-      visible: true,
-    }]
-    warnings.push(`High-fidelity import mode failed (${reason}); loaded simplified fallback layer.`)
-    const uniqueWarnings = Array.from(new Set(warnings))
-    return {
-      document: createSlideDocument({
-        canvas: fallbackCanvas,
-        components: fallbackComponents,
-        warnings: uniqueWarnings,
-      }),
-      canvas: fallbackCanvas,
-      components: fallbackComponents,
-      warnings: uniqueWarnings,
-    }
-  }
+  warnAboutUnsupportedContent(root, styleSources.toLowerCase(), warnings)
 
   let renderSnapshot: RenderSnapshot
   try {
     renderSnapshot = await buildRenderSnapshot(doc, root, inlinedStyleChunks)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error || 'render_snapshot_failed')
-    return buildFallbackImportResult(message)
+    return buildFallbackImportResult(root, null, message, warnings)
   }
 
   try {
-    const rootStyle = parseInlineStyle(root.getAttribute('style') || '')
-    const measuredRootRect = renderSnapshot.root ? measureNodeRect(renderSnapshot.root, renderSnapshot.root) : {}
-    const explicitCanvasWidth = parseCanvasPx(rootStyle.width ?? root.getAttribute('width') ?? undefined, 'width', warnings)
-    const explicitCanvasHeight = parseCanvasPx(rootStyle.height ?? root.getAttribute('height') ?? undefined, 'height', warnings)
-    const computedRootStyle = readComputedStyleSafe(renderSnapshot.root || root)
-    const computedCanvasWidth = parseLength(computedRootStyle?.width || '')?.value
-    const computedCanvasHeight = parseLength(computedRootStyle?.height || '')?.value
-    const sourceBodyStyle = doc.body ? parseInlineStyle(doc.body.getAttribute('style') || '') : {}
-    const sourceHtmlStyle = doc.documentElement ? parseInlineStyle(doc.documentElement.getAttribute('style') || '') : {}
-    const renderBody = renderSnapshot.root?.ownerDocument?.body
-    const renderHtml = renderSnapshot.root?.ownerDocument?.documentElement
-    const computedBodyStyle = renderBody ? readComputedStyleSafe(renderBody) : null
-    const computedHtmlStyle = renderHtml ? readComputedStyleSafe(renderHtml) : null
-    const rootBackground = resolveComputedBackground(computedRootStyle, rootStyle)
-    const bodyBackground = resolveComputedBackground(computedBodyStyle, sourceBodyStyle)
-    const htmlBackground = resolveComputedBackground(computedHtmlStyle, sourceHtmlStyle)
-    const canvasBackground = normalizeBackgroundFill(
-      rootBackground.backgroundFill ||
-      rootBackground.backgroundColor ||
-      bodyBackground.backgroundFill ||
-      bodyBackground.backgroundColor ||
-      htmlBackground.backgroundFill ||
-      htmlBackground.backgroundColor,
-    )
-
-    const absoluteNodes = allNodes.filter((node) => {
-      const nodeId = node.getAttribute('data-import-node-id') || ''
-      const renderNode = renderSnapshot.nodesById.get(nodeId) || node
-      return shouldImportNode(node, readComputedStyleSafe(renderNode))
-    })
-    const fallbackNodes = Array.from(root.children).filter((node): node is HTMLElement => node instanceof HTMLElement)
-    const flowNodes = allNodes.filter((node) => {
-      const nodeId = node.getAttribute('data-import-node-id') || ''
-      const renderNode = renderSnapshot.nodesById.get(nodeId) || node
-      const renderRoot = renderSnapshot.root || root
-      const measuredRect = measureNodeRect(renderNode, renderRoot)
-      return shouldImportFlowNode(node, readComputedStyleSafe(renderNode), measuredRect)
-    })
-    const nodes = absoluteNodes.length > 0
-      ? absoluteNodes
-      : flowNodes.length > 0
-        ? flowNodes
-        : fallbackNodes.length > 0
-          ? fallbackNodes
-          : [root]
-    const importMode = absoluteNodes.length > 0
-      ? 'absolute'
-      : flowNodes.length > 0
-        ? 'flow'
-        : fallbackNodes.length > 0
-          ? 'fallback'
-          : 'root-fallback'
-    const contentBounds = measureContentBounds(nodes, renderSnapshot, root)
-    const pseudoDescriptors = parsePseudoLayerDescriptors(styleSources, root)
-    const pseudoByHost = extractPseudoComponents(
-      pseudoDescriptors,
-      renderSnapshot,
-      root,
-      renderSnapshot.root || root,
-      warnings,
-    )
-    const pseudoLayerCount = Array.from(pseudoByHost.values()).reduce((total, entries) => total + entries.length, 0)
-    if (pseudoDescriptors.length > 0 && pseudoLayerCount === 0) {
-      warnings.push('Pseudo-element selectors were detected but could not be resolved to rendered layers.')
-    } else if (pseudoLayerCount > 0) {
-      warnings.push(
-        'Extracted ' + pseudoLayerCount + ' pseudo-element layer' + (pseudoLayerCount === 1 ? '' : 's') + ' from CSS.',
-      )
-    }
-    const hasDeclaredCanvasWidth = explicitCanvasWidth !== undefined || typeof computedCanvasWidth === 'number'
-    const hasDeclaredCanvasHeight = explicitCanvasHeight !== undefined || typeof computedCanvasHeight === 'number'
-
-    let sourceCanvasWidth = explicitCanvasWidth
-      ?? (typeof computedCanvasWidth === 'number' ? canonicalCanvasValue(computedCanvasWidth, DEFAULT_CANVAS_WIDTH, warnings, 'width', 'computed style') : undefined)
-      ?? canonicalCanvasValue(measuredRootRect.width, DEFAULT_CANVAS_WIDTH, warnings, 'width', 'measured root')
-    let sourceCanvasHeight = explicitCanvasHeight
-      ?? (typeof computedCanvasHeight === 'number' ? canonicalCanvasValue(computedCanvasHeight, DEFAULT_CANVAS_HEIGHT, warnings, 'height', 'computed style') : undefined)
-      ?? canonicalCanvasValue(measuredRootRect.height, DEFAULT_CANVAS_HEIGHT, warnings, 'height', 'measured root')
-
-    sourceCanvasWidth = clampAutoImportCanvasAxis(sourceCanvasWidth, 'width', warnings)
-    sourceCanvasHeight = clampAutoImportCanvasAxis(sourceCanvasHeight, 'height', warnings)
-
-    if (!hasDeclaredCanvasWidth && contentBounds.width && sourceCanvasWidth > contentBounds.width * CANVAS_AUTO_SCALE_RATIO_THRESHOLD) {
-      sourceCanvasWidth = Math.max(contentBounds.width, DEFAULT_CANVAS_WIDTH)
-      warnings.push(
-        'Detected oversized root width during import; normalized canvas width using layer bounds to avoid compressed output.',
-      )
-    }
-    if (!hasDeclaredCanvasHeight && contentBounds.height && sourceCanvasHeight > contentBounds.height * CANVAS_AUTO_SCALE_RATIO_THRESHOLD) {
-      sourceCanvasHeight = Math.max(contentBounds.height, DEFAULT_CANVAS_HEIGHT)
-      warnings.push(
-        'Detected oversized root height during import; normalized canvas height using layer bounds to avoid compressed output.',
-      )
-    }
-
-    if (absoluteNodes.length === 0) {
-      if (flowNodes.length > 0) {
-        warnings.push('No absolutely positioned elements found; imported flow-layout nodes using computed bounds.')
-      } else {
-        warnings.push('No absolutely positioned elements found; imported top-level nodes as fallback.')
-      }
-    }
-    if (sourceCanvasWidth !== DEFAULT_CANVAS_WIDTH || sourceCanvasHeight !== DEFAULT_CANVAS_HEIGHT) {
-      warnings.push(
-        'Detected source canvas ' +
-        sourceCanvasWidth +
-        'x' +
-        sourceCanvasHeight +
-        ' (canonical coordinates preserved).',
-      )
-    }
-    if (importMode === 'fallback' && nodes.length > 0) {
-      warnings.push(`Imported ${nodes.length} fallback node${nodes.length === 1 ? '' : 's'} as locked layers for visual fidelity.`)
-    }
-    if (importMode === 'root-fallback') {
-      warnings.push('No importable child layers were detected; imported the slide root as a locked fallback layer.')
-    }
+    const declared = readDeclaredCanvas(root, renderSnapshot, warnings)
+    const canvasBackground = resolveCanvasBackground(doc, renderSnapshot, declared)
+    const selection = selectImportNodes(allNodes, renderSnapshot, root)
+    const contentBounds = measureContentBounds(selection.nodes, renderSnapshot, root)
+    const pseudoByHost = extractPseudoLayers(styleSources, renderSnapshot, root, warnings)
+    const size = resolveSourceCanvasSize(declared, contentBounds, warnings)
+    warnAboutImportMode(selection, size, warnings)
 
     // For visually-rich designed graphics (gradients, gradient text, stacked cards),
     // flatten non-text visuals into one artwork picture + gradient-text images +
     // editable text boxes, instead of the native shape/text path that overlaps and
     // breaks. Returns null for simple text-on-solid slides, which use the native path.
-    const rasterComponents = await buildRasterizedSlide(renderSnapshot, root, sourceCanvasWidth, sourceCanvasHeight, warnings)
+    const rasterComponents = await buildRasterizedSlide(renderSnapshot, root, size.width, size.height, warnings)
     const components: SlideComponent[] = rasterComponents ? rasterComponents.slice() : []
 
-    // In absolute mode, split text nested inside a positioned container into its own
-    // text-box layers (each keeps its font/size/color) instead of collapsing the whole
-    // container into one uniform text blob. The container is then imported as a
-    // background/shape layer with the extracted text removed.
-    const strippedIdsByContainer = new Map<string, Set<string>>()
-    let nodesForBuild = rasterComponents ? [] : nodes
-    if (!rasterComponents && importMode === 'absolute') {
-      const absoluteIdSet = new Set(absoluteNodes.map((entry) => entry.getAttribute('data-import-node-id') || ''))
-      const extraNodes: HTMLElement[] = []
-      const seenExtra = new Set<string>()
-      for (const container of absoluteNodes) {
-        const containerId = container.getAttribute('data-import-node-id') || ''
-        const leaves = collectNestedTextLeaves(container, absoluteIdSet, renderSnapshot, root)
-        const stripSet = new Set<string>()
-        for (const leaf of leaves) {
-          const leafId = leaf.getAttribute('data-import-node-id') || ''
-          if (!leafId || seenExtra.has(leafId)) continue
-          seenExtra.add(leafId)
-          stripSet.add(leafId)
-          extraNodes.push(leaf)
-        }
-        // Strip nested positioned descendants: each becomes its own component, so
-        // leaving it inside this container's content would render its text twice.
-        for (const descendant of Array.from(container.querySelectorAll<HTMLElement>('[data-import-node-id]'))) {
-          const descId = descendant.getAttribute('data-import-node-id') || ''
-          if (descId && descId !== containerId && absoluteIdSet.has(descId)) stripSet.add(descId)
-        }
-        if (stripSet.size > 0) strippedIdsByContainer.set(containerId, stripSet)
-      }
-      if (extraNodes.length > 0) {
-        const orderIndex = new Map(allNodes.map((entry, i) => [entry, i] as const))
-        nodesForBuild = [...absoluteNodes, ...extraNodes].sort(
-          (a, b) => (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0),
-        )
-        warnings.push(
-          'Split ' + extraNodes.length + ' nested text element' + (extraNodes.length === 1 ? '' : 's') + ' into separate editable text layers.',
-        )
+    let nodesForBuild: HTMLElement[] = []
+    let strippedIdsByContainer = new Map<string, Set<string>>()
+    if (!rasterComponents) {
+      nodesForBuild = selection.nodes
+      if (selection.importMode === 'absolute') {
+        ;({ nodesForBuild, strippedIdsByContainer } = planNestedTextSplit(selection, allNodes, renderSnapshot, root, warnings))
       }
     }
 
-    for (let index = 0; index < nodesForBuild.length; index += 1) {
-      const node = nodesForBuild[index]
-      const styleMap = parseInlineStyle(node.getAttribute('style') || '')
-      const nodeLabel = getNodeLabel(node)
-      const nodeId = node.getAttribute('data-import-node-id') || ''
-      const renderNode = renderSnapshot.nodesById.get(nodeId) || node
-      const renderRoot = renderSnapshot.root || root
-      const computedStyle = readComputedStyleSafe(renderNode)
-      const measured = measureNodeRect(renderNode, renderRoot)
-      const sanitizedNode = buildSanitizedContentNode(renderNode)
-      const stripSet = strippedIdsByContainer.get(nodeId)
-      if (stripSet) {
-        for (const stripId of stripSet) {
-          sanitizedNode.querySelectorAll('[data-import-node-id="' + stripId + '"]').forEach((el) => el.remove())
-        }
-      }
-      const isSvg = node.tagName.toLowerCase() === 'svg'
-      const content = isSvg
-        ? resolveSvgImageFallback(sanitizedNode, nodeLabel, warnings)
-        : stripSet
-          ? sanitizedNode.innerHTML.trim()
-          : (sanitizedNode.innerHTML.trim() || sanitizedNode.outerHTML.trim())
-
-      const explicitLeft = parseStylePositionPx(styleMap, 'left', nodeLabel, warnings, sourceCanvasWidth)
-      const explicitTop = parseStylePositionPx(styleMap, 'top', nodeLabel, warnings, sourceCanvasHeight)
-      const explicitMarginLeft = parseStyleOffsetPx(styleMap, 'margin-left', nodeLabel, warnings, sourceCanvasWidth)
-      const explicitMarginTop = parseStyleOffsetPx(styleMap, 'margin-top', nodeLabel, warnings, sourceCanvasHeight)
-      const computedLeft = parseComputedPositionPx(computedStyle?.left, 'left', nodeLabel, warnings, sourceCanvasWidth)
-      const computedTop = parseComputedPositionPx(computedStyle?.top, 'top', nodeLabel, warnings, sourceCanvasHeight)
-      const computedMarginLeft = parseStyleOffsetPx({ 'margin-left': computedStyle?.marginLeft || '' }, 'margin-left', nodeLabel, warnings, sourceCanvasWidth)
-      const computedMarginTop = parseStyleOffsetPx({ 'margin-top': computedStyle?.marginTop || '' }, 'margin-top', nodeLabel, warnings, sourceCanvasHeight)
-      const transformOffsets = parseTransformOffsets(styleMap.transform, nodeLabel, warnings)
-      const layoutX = Number.isFinite(renderNode.offsetLeft) ? renderNode.offsetLeft : undefined
-      const layoutY = Number.isFinite(renderNode.offsetTop) ? renderNode.offsetTop : undefined
-      const measuredX = typeof measured.x === 'number' && Number.isFinite(measured.x) ? measured.x : undefined
-      const measuredY = typeof measured.y === 'number' && Number.isFinite(measured.y) ? measured.y : undefined
-      const measuredOrLayoutX = measuredX !== undefined
-        ? ((measuredX === 0 && layoutX !== undefined && layoutX > 0) ? layoutX : measuredX)
-        : layoutX
-      const measuredOrLayoutY = measuredY !== undefined
-        ? ((measuredY === 0 && layoutY !== undefined && layoutY > 0) ? layoutY : measuredY)
-        : layoutY
-      const hasNestedRenderParent = Boolean(
-        renderRoot &&
-        renderNode.parentElement &&
-        renderNode.parentElement !== renderRoot &&
-        renderRoot.contains(renderNode.parentElement),
-      )
-      const preferredMeasuredX = hasNestedRenderParent ? measuredOrLayoutX : undefined
-      const preferredMeasuredY = hasNestedRenderParent ? measuredOrLayoutY : undefined
-      const baseX = preferredMeasuredX ?? explicitLeft ?? explicitMarginLeft ?? computedLeft ?? computedMarginLeft ?? measuredOrLayoutX ?? 0
-      const baseY = preferredMeasuredY ?? explicitTop ?? explicitMarginTop ?? computedTop ?? computedMarginTop ?? measuredOrLayoutY ?? 0
-      const baseXUsesMeasuredRect = preferredMeasuredX !== undefined || (
-        explicitLeft === undefined &&
-        explicitMarginLeft === undefined &&
-        computedLeft === undefined &&
-        computedMarginLeft === undefined &&
-        measuredOrLayoutX !== undefined
-      )
-      const baseYUsesMeasuredRect = preferredMeasuredY !== undefined || (
-        explicitTop === undefined &&
-        explicitMarginTop === undefined &&
-        computedTop === undefined &&
-        computedMarginTop === undefined &&
-        measuredOrLayoutY !== undefined
-      )
-      const transformX = baseXUsesMeasuredRect && measuredX !== undefined ? 0 : transformOffsets.x
-      const transformY = baseYUsesMeasuredRect && measuredY !== undefined ? 0 : transformOffsets.y
-      const baseWidth = measured.width
-        ?? parseStylePx(styleMap, 'width', nodeLabel, warnings)
-        ?? parseAttrPx(node.getAttribute('width'), 'width', nodeLabel, warnings)
-        ?? 320
-      const baseHeight = measured.height
-        ?? parseStylePx(styleMap, 'height', nodeLabel, warnings)
-        ?? parseAttrPx(node.getAttribute('height'), 'height', nodeLabel, warnings)
-
-      const extractedStyle = extractStyle(styleMap, computedStyle, warnings, nodeLabel)
-      const fallbackLocked = importMode === 'fallback' || importMode === 'root-fallback'
-      const nodeComponents: SlideComponent[] = []
-      const pseudoForHost = pseudoByHost.get(nodeId)
-      if (pseudoForHost) {
-        nodeComponents.push(
-          ...pseudoForHost.map((entry, pseudoIndex) => ({
-            ...entry,
-            id: `import-${String(index + 1).padStart(3, '0')}-${pseudoIndex + 1}-${entry.sourceLabel?.replace(/[^a-z0-9-]/gi, '-') || 'pseudo'}`,
-          })),
-        )
-      }
-      nodeComponents.push({
-        id: 'import-' + String(index + 1).padStart(3, '0'),
-        type: inferType(node),
-        sourceLabel: fallbackLocked ? `${nodeLabel} (fallback)` : nodeLabel,
-        x: asCanonicalDimension(baseX + transformX),
-        y: asCanonicalDimension(baseY + transformY),
-        width: asCanonicalDimension(baseWidth),
-        height: asCanonicalDimensionOptional(baseHeight),
-        content,
-        style: extractedStyle,
-        locked: fallbackLocked,
-        visible: true,
-      })
-      components.push(...nodeComponents)
+    const ctx: NodeBuildContext = {
+      renderSnapshot, root, canvas: size, importMode: selection.importMode, strippedIdsByContainer, pseudoByHost, warnings,
     }
+    nodesForBuild.forEach((node, index) => components.push(...buildNodeComponents(node, index, ctx)))
 
-    let canvas = {
-      width: sourceCanvasWidth,
-      height: sourceCanvasHeight,
+    let canvas: SlideCanvas = {
+      width: size.width,
+      height: size.height,
       ...(canvasBackground ? { background: canvasBackground } : {}),
     }
     await rasterizeSvgComponents(components, warnings)
     const normalized = normalizeCanvasToContentBounds(components, canvas, warnings)
     canvas = normalized.canvas
-    const normalizedComponents = normalized.components
-    const uniqueWarnings = Array.from(new Set(warnings))
-    return {
-      document: createSlideDocument({
-        canvas,
-        components: normalizedComponents,
-        warnings: uniqueWarnings,
-      }),
-      canvas,
-      components: normalizedComponents,
-      warnings: uniqueWarnings,
-    }
+    return finishImport(canvas, normalized.components, warnings)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error || 'import_parse_failed')
-    return buildFallbackImportResult(message)
+    return buildFallbackImportResult(root, null, message, warnings)
   } finally {
     renderSnapshot.dispose()
   }
+}
+
+// The slide could not be parsed or has no root: rebuild a root from the raw markup.
+function buildEmergencyFallback(html: string, reason: string, warnings: string[]): SlideImportResult {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const root = getCanvasRoot(doc) || doc.body
+  return buildFallbackImportResult(root, html, reason, warnings)
 }

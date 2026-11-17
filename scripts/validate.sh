@@ -28,6 +28,7 @@ if [[ -f package.json ]] && command -v npm >/dev/null 2>&1 \
   npm run -s validate
 fi
 
-# Add this repo's own checks here, for example: pytest, ruff, tsc.
+echo "=== validate: PPTX export test ==="
+node tests/pptx-export.test.mjs
 
 echo "=== validate: passed ==="

@@ -1,0 +1,50 @@
+// Smoke test for the PPTX writer. Runs with only Node installed: node tests/pptx-export.test.mjs
+import { readFileSync } from 'node:fs'
+import { inflateRawSync } from 'node:zlib'
+import vm from 'node:vm'
+import assert from 'node:assert/strict'
+
+const html = readFileSync(new URL('../slideeditor.html', import.meta.url), 'utf8')
+const bundle = html.split('<script>')[1].split('</script>')[0]
+const sandbox = { window: {}, console, TextEncoder, TextDecoder, Blob, URL }
+sandbox.self = sandbox.window
+vm.createContext(sandbox)
+vm.runInContext(bundle, sandbox)
+const E = sandbox.window.SlideEngine
+
+function slideXml(content) {
+  const component = { id: 't1', type: 'text', content, x: 40, y: 40, width: 400, height: 60, locked: false, visible: true, sourceLabel: 'test' }
+  const document = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [component] })
+  return E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Test', document }]).blob.arrayBuffer().then((ab) => {
+    const buf = Buffer.from(ab)
+    let eocd = buf.length - 22
+    while (buf.readUInt32LE(eocd) !== 0x06054b50) eocd--
+    const count = buf.readUInt16LE(eocd + 10)
+    let p = buf.readUInt32LE(eocd + 16)
+    for (let i = 0; i < count; i++) {
+      const method = buf.readUInt16LE(p + 10)
+      const size = buf.readUInt32LE(p + 20)
+      const nameLen = buf.readUInt16LE(p + 28)
+      const extraLen = buf.readUInt16LE(p + 30)
+      const commentLen = buf.readUInt16LE(p + 32)
+      const local = buf.readUInt32LE(p + 42)
+      const name = buf.toString('utf8', p + 46, p + 46 + nameLen)
+      if (name === 'ppt/slides/slide1.xml') {
+        const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28)
+        const data = buf.subarray(start, start + size)
+        return (method === 8 ? inflateRawSync(data) : data).toString('utf8')
+      }
+      p += 46 + nameLen + extraLen + commentLen
+    }
+    throw new Error('ppt/slides/slide1.xml missing from the export')
+  })
+}
+
+const plain = await slideXml('Hello deck')
+assert.ok(plain.includes('Hello deck'), 'text survives export')
+
+const dirty = await slideXml('Bad\u0001char\u000b\tkept')
+assert.ok(!/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(dirty), 'control characters are stripped')
+assert.ok(dirty.includes('Badchar\tkept'), 'tab is kept')
+
+console.log('pptx-export tests passed')

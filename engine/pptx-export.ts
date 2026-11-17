@@ -166,6 +166,8 @@ function buildZipStore(entries: Array<{ path: string; data: Uint8Array }>): Uint
 
 function escXml(value: string): string {
   return value
+    // XML 1.0 forbids control characters other than tab, line feed and carriage return.
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -181,11 +183,11 @@ function toPlainText(html: string): string {
   const noTags = withLineBreaks.replace(/<[^>]*>/g, '')
   return noTags
     .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, '&')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
     .trim()

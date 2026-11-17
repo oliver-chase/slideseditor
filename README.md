@@ -82,6 +82,12 @@ After changing the engine or shell, rebuild it with:
 node scripts/build-bundle.mjs
 ```
 
+Then run the export test, which needs only Node:
+
+```bash
+node tests/pptx-export.test.mjs
+```
+
 ## What it supports
 
 * HTML input — converted into editable PowerPoint text boxes, images, and shapes

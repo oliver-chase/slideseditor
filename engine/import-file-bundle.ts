@@ -111,7 +111,7 @@ export async function inlineCompanionStylesheets(
     if (!lookupKey) continue
 
     const cssText = cssByName.get(lookupKey)
-    if (!cssText) {
+    if (cssText === undefined) {
       unresolvedHrefs.push(href)
       continue
     }
@@ -125,7 +125,7 @@ export async function inlineCompanionStylesheets(
   }
 
   return {
-    html: hasChanges ? (doc.documentElement?.outerHTML || html) : html,
+    html: hasChanges ? (doc.documentElement ? '<!doctype html>\n' + doc.documentElement.outerHTML : html) : html,
     inlinedHrefs: Array.from(new Set(inlinedHrefs)),
     unresolvedHrefs: Array.from(new Set(unresolvedHrefs)),
     ignoredCssFiles: Array.from(new Set(ignoredCssFiles)),

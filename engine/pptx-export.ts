@@ -434,7 +434,7 @@ function buildTextParagraphs(
   // line-height and letter-spacing arrive as CSS px; spcPts and spc are hundredths of a point.
   const spacingAttr = letterSpacingPx ? ` spc="${Math.round(clamp(letterSpacingPx * 0.75 * fontScale, -400, 2000) * 100)}"` : ''
   const lineSpacingXml = lineHeightPx && lineHeightPx > 0
-    ? `<a:lnSpc><a:spcPts val="${Math.round(clamp(lineHeightPx * 0.75 * fontScale, 1, 4000) * 100)}"/></a:lnSpc>`
+    ? `<a:lnSpc><a:spcPts val="${Math.round(clamp(lineHeightPx * 0.75 * fontScale, 1, 1584) * 100)}"/></a:lnSpc>`
     : ''
   const pPr = lineSpacingXml ? `<a:pPr algn="${align}">${lineSpacingXml}</a:pPr>` : `<a:pPr algn="${align}"/>`
 
@@ -476,9 +476,12 @@ function buildLineXml(component: SlideComponent): string {
   const borderColor = parseCssColor(component.style.borderColor)
   if (borderWidth <= 0 || !borderColor) return '<a:ln><a:noFill/></a:ln>'
 
-  const dash = component.style.borderStyle && /dashed|dotted/i.test(component.style.borderStyle)
+  const borderStyle = component.style.borderStyle || ''
+  const dash = /dotted/i.test(borderStyle)
     ? '<a:prstDash val="sysDot"/>'
-    : ''
+    : /dashed/i.test(borderStyle)
+      ? '<a:prstDash val="dash"/>'
+      : ''
   return `<a:ln w="${toEmu(borderWidth, 9_525)}"><a:solidFill><a:srgbClr val="${borderColor.hex}">${borderColor.alpha < 1 ? `<a:alpha val="${toPptAlpha(borderColor.alpha)}"/>` : ''}</a:srgbClr></a:solidFill>${dash}</a:ln>`
 }
 

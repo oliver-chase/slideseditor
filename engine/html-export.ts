@@ -45,9 +45,15 @@ function sanitizeContent(content: string): string {
     .replace(/\s(href|src)\s*=\s*'javascript:[^']*'/gi, '')
 }
 
+function safeCanvasSize(canvas: SlideCanvas): { width: number; height: number } {
+  return {
+    width: Number.isFinite(canvas.width) && canvas.width > 0 ? Math.max(1, Math.round(canvas.width)) : 1920,
+    height: Number.isFinite(canvas.height) && canvas.height > 0 ? Math.max(1, Math.round(canvas.height)) : 1080,
+  }
+}
+
 function buildPrintSafeStyles(canvas: SlideCanvas): string {
-  const safeWidth = Number.isFinite(canvas.width) && canvas.width > 0 ? Math.max(1, Math.round(canvas.width)) : 1920
-  const safeHeight = Number.isFinite(canvas.height) && canvas.height > 0 ? Math.max(1, Math.round(canvas.height)) : 1080
+  const { width: safeWidth, height: safeHeight } = safeCanvasSize(canvas)
   const safeBackground =
     typeof canvas.background === 'string' && canvas.background.trim()
       ? canvas.background.trim()
@@ -146,8 +152,8 @@ export function convertSlideComponentsToHtml(input: {
     '<body>',
   ].join('\n')
   const rootOpen =
-    `<div class="slides-export-root"><div class="slide-canvas" data-slide-root="1" data-oliver-export-version="1" data-oliver-source="${escapeAttribute(source)}" data-oliver-slide-id="${escapeAttribute(slideId)}" data-oliver-revision="${escapeAttribute(revision)}" data-oliver-exported-at="${escapeAttribute(exportedAt)}" style="position:relative;width:${canvas.width}px;height:${canvas.height}px;overflow:hidden;${canvas.background ? `background:${escapeAttribute(canvas.background)};` : ''}">`
-  const body = components.map(componentToHtml).join('\n')
+    `<div class="slides-export-root"><div class="slide-canvas" data-slide-root="1" data-oliver-export-version="1" data-oliver-source="${escapeAttribute(source)}" data-oliver-slide-id="${escapeAttribute(slideId)}" data-oliver-revision="${escapeAttribute(revision)}" data-oliver-exported-at="${escapeAttribute(exportedAt)}" style="position:relative;width:${safeCanvasSize(canvas).width}px;height:${safeCanvasSize(canvas).height}px;overflow:hidden;${canvas.background ? `background:${escapeAttribute(canvas.background)};` : ''}">`
+  const body = components.filter((component) => component.visible !== false).map(componentToHtml).join('\n')
   const rootClose = '</div></div>'
   const footer = '</body></html>'
 

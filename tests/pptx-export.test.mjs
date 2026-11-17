@@ -82,4 +82,22 @@ assert.ok(captioned.includes('Caption text'), 'the caption text is kept')
 const withBackground = await slideXml('On a gradient', {}, 40, 40, 'linear-gradient(180deg, #112233, #445566)')
 assert.ok(withBackground.includes('name="slide-background"') && withBackground.includes('<a:gradFill'), 'a gradient background exports as a background shape')
 
+// Line spacing and dashed borders stay inside what PowerPoint accepts.
+const tall = await slideXml('Tall', { lineHeight: 5000 })
+assert.ok(/<a:spcPts val="(\d+)"/.test(tall) && Number(tall.match(/<a:spcPts val="(\d+)"/)[1]) <= 158400, 'line spacing stays at or under 158400')
+const dashed = await slideXml('Dashed', { borderStyle: 'dashed', borderWidth: 2, borderColor: '#000000' })
+assert.ok(dashed.includes('prstDash val="dash"'), 'a dashed border writes dash')
+const dotted = await slideXml('Dotted', { borderStyle: 'dotted', borderWidth: 2, borderColor: '#000000' })
+assert.ok(dotted.includes('prstDash val="sysDot"'), 'a dotted border writes sysDot')
+
+// The HTML export leaves out hidden layers.
+const hiddenHtml = E.convertSlideComponentsToHtml({
+  canvas: { width: 800, height: 400 },
+  components: [
+    { id: 'a', type: 'text', content: 'Shown text', x: 0, y: 0, width: 100, height: 20, style: {}, locked: false, visible: true },
+    { id: 'b', type: 'text', content: 'Hidden text', x: 0, y: 30, width: 100, height: 20, style: {}, locked: false, visible: false },
+  ],
+})
+assert.ok(hiddenHtml.includes('Shown text') && !hiddenHtml.includes('Hidden text'), 'hidden layers stay out of the HTML export')
+
 console.log('pptx-export tests passed')

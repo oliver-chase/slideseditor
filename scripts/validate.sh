@@ -28,7 +28,7 @@ if [[ -f package.json ]] && command -v npm >/dev/null 2>&1 \
   npm run -s validate
 fi
 
-echo "=== validate: PPTX export test ==="
-node tests/pptx-export.test.mjs
+echo "=== validate: tests ==="
+for t in tests/*.test.mjs; do node "$t"; done
 
 echo "=== validate: passed ==="

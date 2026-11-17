@@ -1,16 +1,9 @@
-// Smoke test for the PPTX writer. Runs with only Node installed: node tests/pptx-export.test.mjs
-import { readFileSync } from 'node:fs'
+// Tests for the PPTX writer. Runs with only Node installed: node tests/pptx-export.test.mjs
 import { inflateRawSync } from 'node:zlib'
-import vm from 'node:vm'
 import assert from 'node:assert/strict'
+import { loadEngine } from './load-engine.mjs'
 
-const html = readFileSync(process.env.SLIDE_BUNDLE || new URL('../slideeditor.html', import.meta.url), 'utf8')
-const bundle = html.split('<script>')[1].split('</script>')[0]
-const sandbox = { window: {}, console, TextEncoder, TextDecoder, Blob, URL, atob, btoa }
-sandbox.self = sandbox.window
-vm.createContext(sandbox)
-vm.runInContext(bundle, sandbox)
-const E = sandbox.window.SlideEngine
+const E = loadEngine()
 
 function slideXml(content, style = {}, x = 40, y = 40, background) {
   const component = { id: 't1', type: 'text', content, x, y, width: 400, height: 60, locked: false, visible: true, sourceLabel: 'test', style }
@@ -89,15 +82,5 @@ const dashed = await slideXml('Dashed', { borderStyle: 'dashed', borderWidth: 2,
 assert.ok(dashed.includes('prstDash val="dash"'), 'a dashed border writes dash')
 const dotted = await slideXml('Dotted', { borderStyle: 'dotted', borderWidth: 2, borderColor: '#000000' })
 assert.ok(dotted.includes('prstDash val="sysDot"'), 'a dotted border writes sysDot')
-
-// The HTML export leaves out hidden layers.
-const hiddenHtml = E.convertSlideComponentsToHtml({
-  canvas: { width: 800, height: 400 },
-  components: [
-    { id: 'a', type: 'text', content: 'Shown text', x: 0, y: 0, width: 100, height: 20, style: {}, locked: false, visible: true },
-    { id: 'b', type: 'text', content: 'Hidden text', x: 0, y: 30, width: 100, height: 20, style: {}, locked: false, visible: false },
-  ],
-})
-assert.ok(hiddenHtml.includes('Shown text') && !hiddenHtml.includes('Hidden text'), 'hidden layers stay out of the HTML export')
 
 console.log('pptx-export tests passed')

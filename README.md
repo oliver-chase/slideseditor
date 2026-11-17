@@ -77,10 +77,10 @@ Rebuilding needs Node 22.13 or later, because the bundler uses Node's built-in t
 node scripts/build-bundle.mjs
 ```
 
-Then run the export test, which needs only Node:
+Then run the tests, which need only Node and bundle the engine from source:
 
 ```bash
-node tests/pptx-export.test.mjs
+for t in tests/*.test.mjs; do node "$t"; done
 ```
 
 ## What it supports

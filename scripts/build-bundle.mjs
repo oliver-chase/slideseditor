@@ -77,7 +77,7 @@ ${api}
 `
 }
 
-function buildHtml(engineJs) {
+export function buildHtml(engineJs) {
   const shellPath = join(REPO, 'src', 'shell.html')
   const shell = readFileSync(shellPath, 'utf8')
   const marker = '/* __SLIDE_ENGINE_BUNDLE__ */'

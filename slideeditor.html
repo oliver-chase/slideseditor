@@ -148,18 +148,6 @@ function cloneComponent(component                )                 {
   return {
     ...component,
     style: { ...component.style },
-    ...(component.groupId ? { groupId: component.groupId } : {}),
-    ...(component.groupName ? { groupName: component.groupName } : {}),
-    ...(component.layoutConstraint ? { layoutConstraint: { ...component.layoutConstraint } } : {}),
-  }
-}
-
-function cloneTheme(theme                        )                         {
-  if (!theme) return undefined
-  return {
-    fonts: { ...theme.fonts },
-    colors: { ...theme.colors },
-    spacingScale: { ...theme.spacingScale },
   }
 }
 
@@ -194,169 +182,6 @@ function clampComponentToCanvas(component                , canvas             , 
   }
 }
 
-function inferPinnedConstraint(component                , canvas             , base                       )                        {
-  const horizontalCenter = component.x + (component.width / 2)
-  const verticalCenter = component.y + (getComponentHeight(component) / 2)
-  const anchorX =
-    horizontalCenter <= canvas.width * 0.33
-      ? 'left'
-      : horizontalCenter >= canvas.width * 0.67
-        ? 'right'
-        : 'center'
-  const anchorY =
-    verticalCenter <= canvas.height * 0.33
-      ? 'top'
-      : verticalCenter >= canvas.height * 0.67
-        ? 'bottom'
-        : 'center'
-  const offsetX =
-    anchorX === 'left'
-      ? component.x
-      : anchorX === 'right'
-        ? canvas.width - (component.x + component.width)
-        : horizontalCenter - (canvas.width / 2)
-  const offsetY =
-    anchorY === 'top'
-      ? component.y
-      : anchorY === 'bottom'
-        ? canvas.height - (component.y + getComponentHeight(component))
-        : verticalCenter - (canvas.height / 2)
-
-  return {
-    ...base,
-    anchorX,
-    anchorY,
-    offsetX: Math.round(offsetX),
-    offsetY: Math.round(offsetY),
-  }
-}
-
-function reflowPinnedComponent(component                , canvas             )                 {
-  const constraint = component.layoutConstraint
-  if (!constraint || constraint.type !== 'pinned') return component
-  const width = component.width
-  const height = getComponentHeight(component)
-  const nextX =
-    constraint.anchorX === 'right'
-      ? canvas.width - width - (constraint.offsetX ?? 0)
-      : constraint.anchorX === 'center'
-        ? Math.round((canvas.width / 2) + (constraint.offsetX ?? 0) - (width / 2))
-        : constraint.offsetX ?? component.x
-  const nextY =
-    constraint.anchorY === 'bottom'
-      ? canvas.height - height - (constraint.offsetY ?? 0)
-      : constraint.anchorY === 'center'
-        ? Math.round((canvas.height / 2) + (constraint.offsetY ?? 0) - (height / 2))
-        : constraint.offsetY ?? component.y
-  const nextCoordinates = clampComponentToCanvas(component, canvas, nextX, nextY)
-  return {
-    ...component,
-    x: nextCoordinates.x,
-    y: nextCoordinates.y,
-  }
-}
-
-function applyLayoutConstraintToComponents(input   
-                     
-                              
-                       
-                                   
- )                   {
-  const selectedIdSet = new Set(input.selectedIds)
-  const selected = input.components.filter((component) => selectedIdSet.has(component.id) && !component.locked)
-  if (selected.length === 0) return input.components.map(cloneComponent)
-
-  const baseConstraint                        = {
-    ...input.constraint,
-    gap: Math.max(0, Math.round(input.constraint.gap ?? 16)),
-    columns: Math.max(1, Math.round(input.constraint.columns ?? 2)),
-  }
-
-  const nextById = new Map                        ()
-  selected.forEach((component) => {
-    nextById.set(component.id, {
-      ...cloneComponent(component),
-      layoutConstraint:
-        baseConstraint.type === 'pinned'
-          ? inferPinnedConstraint(component, input.canvas, baseConstraint)
-          : { ...baseConstraint },
-    })
-  })
-
-  if (baseConstraint.type === 'stack' || baseConstraint.type === 'row' || baseConstraint.type === 'grid') {
-    const minX = Math.min(...selected.map((component) => component.x))
-    const minY = Math.min(...selected.map((component) => component.y))
-    const maxWidth = Math.max(...selected.map((component) => component.width))
-    const maxHeight = Math.max(...selected.map((component) => getComponentHeight(component)))
-    const gap = baseConstraint.gap ?? 16
-
-    if (baseConstraint.type === 'stack') {
-      let cursorY = minY
-      selected
-        .slice()
-        .sort((a, b) => a.y - b.y || a.x - b.x)
-        .forEach((component) => {
-          const next = nextById.get(component.id)
-          if (!next) return
-          const nextX =
-            baseConstraint.alignment === 'right'
-              ? minX + maxWidth - component.width
-              : baseConstraint.alignment === 'center'
-                ? minX + ((maxWidth - component.width) / 2)
-                : minX
-          const nextCoordinates = clampComponentToCanvas(next, input.canvas, nextX, cursorY)
-          next.x = nextCoordinates.x
-          next.y = nextCoordinates.y
-          cursorY += getComponentHeight(component) + gap
-        })
-    }
-
-    if (baseConstraint.type === 'row') {
-      let cursorX = minX
-      selected
-        .slice()
-        .sort((a, b) => a.x - b.x || a.y - b.y)
-        .forEach((component) => {
-          const next = nextById.get(component.id)
-          if (!next) return
-          const nextY =
-            baseConstraint.alignment === 'right'
-              ? minY + maxHeight - getComponentHeight(component)
-              : baseConstraint.alignment === 'center'
-                ? minY + ((maxHeight - getComponentHeight(component)) / 2)
-                : minY
-          const nextCoordinates = clampComponentToCanvas(next, input.canvas, cursorX, nextY)
-          next.x = nextCoordinates.x
-          next.y = nextCoordinates.y
-          cursorX += component.width + gap
-        })
-    }
-
-    if (baseConstraint.type === 'grid') {
-      const columns = Math.max(1, baseConstraint.columns ?? 2)
-      selected
-        .slice()
-        .sort((a, b) => a.y - b.y || a.x - b.x)
-        .forEach((component, index) => {
-          const next = nextById.get(component.id)
-          if (!next) return
-          const column = index % columns
-          const row = Math.floor(index / columns)
-          const nextX = minX + (column * (maxWidth + gap))
-          const nextY = minY + (row * (maxHeight + gap))
-          const nextCoordinates = clampComponentToCanvas(next, input.canvas, nextX, nextY)
-          next.x = nextCoordinates.x
-          next.y = nextCoordinates.y
-        })
-    }
-  }
-
-  return input.components.map((component) => {
-    const next = nextById.get(component.id)
-    return next ? next : cloneComponent(component)
-  })
-}
-
 function adaptComponentsToResponsiveCanvasWithWarnings(input   
                              
                          
@@ -365,11 +190,8 @@ function adaptComponentsToResponsiveCanvasWithWarnings(input
   const widthRatio = input.nextCanvas.width / Math.max(1, input.previousCanvas.width)
   const heightRatio = input.nextCanvas.height / Math.max(1, input.previousCanvas.height)
   const warnings           = []
-  const baseComponents = input.components.map((component) => {
+  const components = input.components.map((component) => {
     const next = cloneComponent(component)
-    if (component.layoutConstraint?.type === 'pinned') {
-      return reflowPinnedComponent(next, input.nextCanvas)
-    }
     next.x = Math.round(component.x * widthRatio)
     next.y = Math.round(component.y * heightRatio)
     next.width = Math.max(1, Math.round(component.width * widthRatio))
@@ -377,9 +199,7 @@ function adaptComponentsToResponsiveCanvasWithWarnings(input
       next.height = Math.max(1, Math.round(component.height * heightRatio))
     }
     const clamped = clampComponentToCanvas(next, input.nextCanvas, next.x, next.y)
-    const hasConstraint = Boolean(component.layoutConstraint)
-    const movedByClamp = clamped.x !== next.x || clamped.y !== next.y
-    if (!hasConstraint && movedByClamp) {
+    if (clamped.x !== next.x || clamped.y !== next.y) {
       warnings.push(
         `Manual intervention may be required for unconstrained layer "${component.id}" after responsive reflow.`,
       )
@@ -387,40 +207,6 @@ function adaptComponentsToResponsiveCanvasWithWarnings(input
     next.x = clamped.x
     next.y = clamped.y
     return next
-  })
-
-  const constraintGroups = new Map                                                              ()
-  for (const component of baseComponents) {
-    const constraint = component.layoutConstraint
-    if (!constraint || constraint.type === 'pinned') continue
-    const bucketKey = component.groupId
-      ? `group:${component.groupId}`
-      : `constraint:${constraint.type}:${constraint.alignment || 'left'}:${constraint.columns || 1}:${constraint.gap || 16}`
-    const existing = constraintGroups.get(bucketKey)
-    if (existing) {
-      existing.ids.push(component.id)
-    } else {
-      constraintGroups.set(bucketKey, { constraint: { ...constraint }, ids: [component.id] })
-    }
-  }
-
-  let adapted = baseComponents
-  for (const group of constraintGroups.values()) {
-    adapted = applyLayoutConstraintToComponents({
-      canvas: input.nextCanvas,
-      components: adapted,
-      selectedIds: group.ids,
-      constraint: group.constraint,
-    })
-  }
-
-  const components = adapted.map((component) => {
-    const clamped = clampComponentToCanvas(component, input.nextCanvas, component.x, component.y)
-    return {
-      ...component,
-      x: clamped.x,
-      y: clamped.y,
-    }
   })
   return { components, warnings: Array.from(new Set(warnings)) }
 }
@@ -445,30 +231,19 @@ function createSlideDocument(input
                      
                               
                      
-                    
  )                {
   const deck = createSlideDeck(input)
   return {
     version: 1,
     deck,
     warnings: Array.isArray(input.warnings) ? [...input.warnings] : [],
-    ...(input.theme ? { theme: cloneTheme(input.theme) } : {}),
   }
 }
 
 // ===== import-validation.ts =====
 const MAX_IMPORT_FILE_SIZE_BYTES = 50_000_000
 
-                                    
-                       
-                    
-                 
-                    
-                        
-                     
-
                                      
-                              
                  
  
 
@@ -479,7 +254,6 @@ function validateImportFile(file      )                            {
 
   if (!looksHtml) {
     return {
-      code: 'invalid_file_type',
       message: 'Only .html and .htm files are supported for slide import.',
     }
   }
@@ -487,7 +261,6 @@ function validateImportFile(file      )                            {
   if (file.size > MAX_IMPORT_FILE_SIZE_BYTES) {
     const maxSizeMb = Math.floor(MAX_IMPORT_FILE_SIZE_BYTES / 1_000_000)
     return {
-      code: 'file_too_large',
       message: `Import file is too large. Maximum supported size is ${maxSizeMb} MB.`,
     }
   }
@@ -499,14 +272,12 @@ function validateHtmlImportInput(html        )                            {
   const trimmed = html.trim()
   if (!trimmed) {
     return {
-      code: 'empty_input',
       message: 'HTML input is empty. Paste HTML or choose a file before parsing.',
     }
   }
 
   if (!/<[a-z][^>]*>/i.test(trimmed)) {
     return {
-      code: 'invalid_markup',
       message: 'Input does not appear to contain valid HTML markup.',
     }
   }
@@ -517,7 +288,6 @@ function validateHtmlImportInput(html        )                            {
 function validateParsedResult(result                   )                            {
   if (result.components.length === 0) {
     return {
-      code: 'unsupported_layout',
       message: 'No supported slide components were detected. Ensure elements are absolutely positioned with left/top coordinates.',
     }
   }
@@ -527,7 +297,6 @@ function validateParsedResult(result                   )                        
 function classifyImportError(error         )                     {
   if (error instanceof DOMException && error.name === 'AbortError') {
     return {
-      code: 'generic_failure',
       message: 'Import was canceled before parse completion.',
     }
   }
@@ -537,20 +306,17 @@ function classifyImportError(error         )                     {
 
   if (message.includes('markup') || message.includes('html')) {
     return {
-      code: 'invalid_markup',
       message: raw,
     }
   }
 
   if (message.includes('unsupported') || message.includes('slide root') || message.includes('positioned')) {
     return {
-      code: 'unsupported_layout',
       message: raw,
     }
   }
 
   return {
-    code: 'generic_failure',
     message: raw || 'Unexpected parser error.',
   }
 }
@@ -995,18 +761,6 @@ async function inlineExternalStylesheets(doc          , warnings          )     
   return inlinedStyles.sort((a, b) => a.order - b.order)
 }
 
-function parseInlineStyle(styleValue        )                         {
-  const styleMap                         = {}
-  for (const segment of styleValue.split(';')) {
-    const idx = segment.indexOf(':')
-    if (idx <= 0) continue
-    const key = segment.slice(0, idx).trim().toLowerCase()
-    const value = segment.slice(idx + 1).trim()
-    if (key) styleMap[key] = value
-  }
-  return styleMap
-}
-
 function parseRuleDeclarations(rawDeclarations        )                         {
   const declarations                         = {}
   const declarationList = rawDeclarations.split(';')
@@ -1101,10 +855,6 @@ function buildPseudoContent(styleMap                        , pseudoNodeLabel   
   return escapeHtmlText(stripWrappingQuotes(rawContent))
 }
 
-function parsePseudoDimension(styleMap                        , key                    , nodeLabel        , warnings          )                     {
-  return parseStylePx(styleMap, key, nodeLabel, warnings)
-}
-
 function computePseudoOffset(
   styleMap                        ,
   axis           ,
@@ -1189,7 +939,7 @@ function parsePositivePx(rawValue                           )                   
 }
 
 function estimateNodeAreaFromDeclaredSize(node             )         {
-  const styleMap = parseInlineStyle(node.getAttribute('style') || '')
+  const styleMap = parseRuleDeclarations(node.getAttribute('style') || '')
   const width = parsePositivePx(styleMap.width ?? node.getAttribute('width'))
   const height = parsePositivePx(styleMap.height ?? node.getAttribute('height'))
   if (!width || !height) return 0
@@ -1407,15 +1157,11 @@ function parseStylePositionPx(
 
 function parseStyleOffsetPx(
   styleMap                        ,
-  key                                               ,
+  key                              ,
   nodeLabel        ,
   warnings          ,
   axisSize        ,
 )                     {
-  if (key === 'left' || key === 'top') {
-    return parseStylePositionPx(styleMap, key, nodeLabel, warnings, axisSize)
-  }
-
   const raw = styleMap[key]
   if (raw === undefined) return undefined
   if (!raw.trim() || raw.trim().toLowerCase() === 'auto') return undefined
@@ -1691,7 +1437,7 @@ function getCanvasRoot(doc          )                     {
   // everything outside it — reproduced with a real deck body containing multiple sized cards.
   const scoredCandidates = Array.from(doc.body.querySelectorAll             ('div,section,article,main'))
     .map((candidate) => {
-      const styleMap = parseInlineStyle(candidate.getAttribute('style') || '')
+      const styleMap = parseRuleDeclarations(candidate.getAttribute('style') || '')
       const width = parsePositivePx(styleMap.width ?? candidate.getAttribute('width'))
       const height = parsePositivePx(styleMap.height ?? candidate.getAttribute('height'))
       if (!width || !height) return { candidate, score: 0 }
@@ -1718,7 +1464,7 @@ function getCanvasRoot(doc          )                     {
 }
 
 function shouldImportNode(node             , computedStyle                            )          {
-  const style = parseInlineStyle(node.getAttribute('style') || '')
+  const style = parseRuleDeclarations(node.getAttribute('style') || '')
   const computedPosition = (computedStyle?.position || '').trim().toLowerCase()
   const computedLeft = (computedStyle?.left || '').trim().toLowerCase()
   const computedTop = (computedStyle?.top || '').trim().toLowerCase()
@@ -2030,14 +1776,14 @@ function extractPseudoComponents(
 
     const renderNode = renderSnapshot.nodesById.get(hostId) || hostNode
     const measuredHost = measureNodeRect(renderNode, renderRoot)
-    const hostStyleMap = parseInlineStyle(hostNode.getAttribute('style') || '')
+    const hostStyleMap = parseRuleDeclarations(hostNode.getAttribute('style') || '')
     const hostComputedStyle = readComputedStyleSafe(renderNode)
     const hostLabel = getNodeLabel(hostNode)
 
     const pseudoLabel = hostLabel + '::' + pseudo
     const pseudoContent = buildPseudoContent(styleMap, pseudoLabel, warnings)
-    const pseudoWidth = parsePseudoDimension(styleMap, 'width', pseudoLabel, warnings)
-    const pseudoHeight = parsePseudoDimension(styleMap, 'height', pseudoLabel, warnings)
+    const pseudoWidth = parseStylePx(styleMap, 'width', pseudoLabel, warnings)
+    const pseudoHeight = parseStylePx(styleMap, 'height', pseudoLabel, warnings)
     if (!shouldImportPseudoLayer(styleMap, pseudoWidth, pseudoHeight)) continue
 
     const hostX = typeof measuredHost.x === 'number' && Number.isFinite(measuredHost.x) ? measuredHost.x : 0
@@ -2420,7 +2166,7 @@ function buildTextBoxComponent(
     sourceLabel: getNodeLabel(el),
     ...measuredBox(el, measureRoot),
     content: escapeHtmlText(text),
-    style: extractStyle(parseInlineStyle(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
+    style: extractStyle(parseRuleDeclarations(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
     locked: false,
     visible: true,
   }
@@ -2531,7 +2277,7 @@ function buildFallbackImportResult(
   warnings          ,
 )                    {
   const emergency = html !== null
-  const rootStyle = root ? parseInlineStyle(root.getAttribute('style') || '') : {}
+  const rootStyle = root ? parseRuleDeclarations(root.getAttribute('style') || '') : {}
   const attrWidth = !emergency && root ? root.getAttribute('width') ?? undefined : undefined
   const attrHeight = !emergency && root ? root.getAttribute('height') ?? undefined : undefined
   const canvas = {
@@ -2585,7 +2331,7 @@ function warnAboutUnsupportedContent(root             , styleSourceText        ,
  
 
 function readDeclaredCanvas(root             , renderSnapshot                , warnings          )                 {
-  const rootStyle = parseInlineStyle(root.getAttribute('style') || '')
+  const rootStyle = parseRuleDeclarations(root.getAttribute('style') || '')
   const measuredRootRect = renderSnapshot.root ? measureNodeRect(renderSnapshot.root, renderSnapshot.root) : {}
   const explicitWidth = parseCanvasPx(rootStyle.width ?? root.getAttribute('width') ?? undefined, 'width', warnings)
   const explicitHeight = parseCanvasPx(rootStyle.height ?? root.getAttribute('height') ?? undefined, 'height', warnings)
@@ -2606,8 +2352,8 @@ function resolveCanvasBackground(
   renderSnapshot                ,
   declared                ,
 )                     {
-  const sourceBodyStyle = doc.body ? parseInlineStyle(doc.body.getAttribute('style') || '') : {}
-  const sourceHtmlStyle = doc.documentElement ? parseInlineStyle(doc.documentElement.getAttribute('style') || '') : {}
+  const sourceBodyStyle = doc.body ? parseRuleDeclarations(doc.body.getAttribute('style') || '') : {}
+  const sourceHtmlStyle = doc.documentElement ? parseRuleDeclarations(doc.documentElement.getAttribute('style') || '') : {}
   const renderBody = renderSnapshot.root?.ownerDocument?.body
   const renderHtml = renderSnapshot.root?.ownerDocument?.documentElement
   const computedBodyStyle = renderBody ? readComputedStyleSafe(renderBody) : null
@@ -2845,7 +2591,7 @@ function resolveNodePosition(
 // Turn one imported node into its component, preceded by any pseudo-element layers it hosts.
 function buildNodeComponents(node             , index        , ctx                  )                   {
   const { renderSnapshot, root, canvas, importMode, warnings } = ctx
-  const styleMap = parseInlineStyle(node.getAttribute('style') || '')
+  const styleMap = parseRuleDeclarations(node.getAttribute('style') || '')
   const nodeLabel = getNodeLabel(node)
   const nodeId = node.getAttribute('data-import-node-id') || ''
   const renderNode = renderSnapshot.nodesById.get(nodeId) || node
@@ -4045,7 +3791,6 @@ function convertSlidesToPptx(slidesInput                        )               
   return {
     blob,
     warnings,
-    slideCount: slides.length,
   }
 }
 

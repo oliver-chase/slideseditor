@@ -9,27 +9,6 @@ export type SlideComponentType =
   | 'tag-line'
   | 'panel'
 
-export type SlideThemeRole = 'heading' | 'body' | 'accent' | 'surface'
-export type SlideLayoutConstraintType = 'stack' | 'row' | 'grid' | 'pinned'
-export type SlideLayoutConstraintAlignment = 'left' | 'center' | 'right'
-
-export interface SlideLayoutConstraint {
-  type: SlideLayoutConstraintType
-  alignment?: SlideLayoutConstraintAlignment
-  gap?: number
-  columns?: number
-  anchorX?: 'left' | 'center' | 'right'
-  anchorY?: 'top' | 'center' | 'bottom'
-  offsetX?: number
-  offsetY?: number
-}
-
-export interface SlideTheme {
-  fonts: { heading: string; body: string }
-  colors: { primary: string; secondary: string; background: string; accent: string }
-  spacingScale: Record<string, number>
-}
-
 export interface SlideComponentStyle {
   fontSize?: number
   fontWeight?: number
@@ -46,24 +25,18 @@ export interface SlideComponentStyle {
   lineHeight?: number
   letterSpacing?: number
   textAlign?: 'left' | 'center' | 'right' | 'justify'
-  textAutoSize?: boolean
 }
 
 export interface SlideComponent {
   id: string
   type: SlideComponentType
   sourceLabel?: string
-  groupId?: string
-  groupName?: string
   x: number
   y: number
   width: number
   height?: number
   content: string
   style: SlideComponentStyle
-  layoutConstraint?: SlideLayoutConstraint
-  themeRole?: SlideThemeRole
-  themeLinked?: boolean
   locked: boolean
   visible: boolean
 }
@@ -95,7 +68,6 @@ export interface SlideDocument {
   version: number
   deck: SlideDeck
   warnings: string[]
-  theme?: SlideTheme
 }
 
 export interface SlideImportResult {

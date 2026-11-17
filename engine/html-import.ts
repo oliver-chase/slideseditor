@@ -440,18 +440,6 @@ async function inlineExternalStylesheets(doc: Document, warnings: string[]): Pro
   return inlinedStyles.sort((a, b) => a.order - b.order)
 }
 
-function parseInlineStyle(styleValue: string): Record<string, string> {
-  const styleMap: Record<string, string> = {}
-  for (const segment of styleValue.split(';')) {
-    const idx = segment.indexOf(':')
-    if (idx <= 0) continue
-    const key = segment.slice(0, idx).trim().toLowerCase()
-    const value = segment.slice(idx + 1).trim()
-    if (key) styleMap[key] = value
-  }
-  return styleMap
-}
-
 function parseRuleDeclarations(rawDeclarations: string): Record<string, string> {
   const declarations: Record<string, string> = {}
   const declarationList = rawDeclarations.split(';')
@@ -546,10 +534,6 @@ function buildPseudoContent(styleMap: Record<string, string>, pseudoNodeLabel: s
   return escapeHtmlText(stripWrappingQuotes(rawContent))
 }
 
-function parsePseudoDimension(styleMap: Record<string, string>, key: 'width' | 'height', nodeLabel: string, warnings: string[]): number | undefined {
-  return parseStylePx(styleMap, key, nodeLabel, warnings)
-}
-
 function computePseudoOffset(
   styleMap: Record<string, string>,
   axis: 'x' | 'y',
@@ -634,7 +618,7 @@ function parsePositivePx(rawValue: string | null | undefined): number | undefine
 }
 
 function estimateNodeAreaFromDeclaredSize(node: HTMLElement): number {
-  const styleMap = parseInlineStyle(node.getAttribute('style') || '')
+  const styleMap = parseRuleDeclarations(node.getAttribute('style') || '')
   const width = parsePositivePx(styleMap.width ?? node.getAttribute('width'))
   const height = parsePositivePx(styleMap.height ?? node.getAttribute('height'))
   if (!width || !height) return 0
@@ -852,15 +836,11 @@ function parseStylePositionPx(
 
 function parseStyleOffsetPx(
   styleMap: Record<string, string>,
-  key: 'left' | 'top' | 'margin-left' | 'margin-top',
+  key: 'margin-left' | 'margin-top',
   nodeLabel: string,
   warnings: string[],
   axisSize: number,
 ): number | undefined {
-  if (key === 'left' || key === 'top') {
-    return parseStylePositionPx(styleMap, key, nodeLabel, warnings, axisSize)
-  }
-
   const raw = styleMap[key]
   if (raw === undefined) return undefined
   if (!raw.trim() || raw.trim().toLowerCase() === 'auto') return undefined
@@ -1136,7 +1116,7 @@ function getCanvasRoot(doc: Document): HTMLElement | null {
   // everything outside it — reproduced with a real deck body containing multiple sized cards.
   const scoredCandidates = Array.from(doc.body.querySelectorAll<HTMLElement>('div,section,article,main'))
     .map((candidate) => {
-      const styleMap = parseInlineStyle(candidate.getAttribute('style') || '')
+      const styleMap = parseRuleDeclarations(candidate.getAttribute('style') || '')
       const width = parsePositivePx(styleMap.width ?? candidate.getAttribute('width'))
       const height = parsePositivePx(styleMap.height ?? candidate.getAttribute('height'))
       if (!width || !height) return { candidate, score: 0 }
@@ -1163,7 +1143,7 @@ function getCanvasRoot(doc: Document): HTMLElement | null {
 }
 
 function shouldImportNode(node: HTMLElement, computedStyle: CSSStyleDeclaration | null): boolean {
-  const style = parseInlineStyle(node.getAttribute('style') || '')
+  const style = parseRuleDeclarations(node.getAttribute('style') || '')
   const computedPosition = (computedStyle?.position || '').trim().toLowerCase()
   const computedLeft = (computedStyle?.left || '').trim().toLowerCase()
   const computedTop = (computedStyle?.top || '').trim().toLowerCase()
@@ -1475,14 +1455,14 @@ function extractPseudoComponents(
 
     const renderNode = renderSnapshot.nodesById.get(hostId) || hostNode
     const measuredHost = measureNodeRect(renderNode, renderRoot)
-    const hostStyleMap = parseInlineStyle(hostNode.getAttribute('style') || '')
+    const hostStyleMap = parseRuleDeclarations(hostNode.getAttribute('style') || '')
     const hostComputedStyle = readComputedStyleSafe(renderNode)
     const hostLabel = getNodeLabel(hostNode)
 
     const pseudoLabel = hostLabel + '::' + pseudo
     const pseudoContent = buildPseudoContent(styleMap, pseudoLabel, warnings)
-    const pseudoWidth = parsePseudoDimension(styleMap, 'width', pseudoLabel, warnings)
-    const pseudoHeight = parsePseudoDimension(styleMap, 'height', pseudoLabel, warnings)
+    const pseudoWidth = parseStylePx(styleMap, 'width', pseudoLabel, warnings)
+    const pseudoHeight = parseStylePx(styleMap, 'height', pseudoLabel, warnings)
     if (!shouldImportPseudoLayer(styleMap, pseudoWidth, pseudoHeight)) continue
 
     const hostX = typeof measuredHost.x === 'number' && Number.isFinite(measuredHost.x) ? measuredHost.x : 0
@@ -1865,7 +1845,7 @@ function buildTextBoxComponent(
     sourceLabel: getNodeLabel(el),
     ...measuredBox(el, measureRoot),
     content: escapeHtmlText(text),
-    style: extractStyle(parseInlineStyle(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
+    style: extractStyle(parseRuleDeclarations(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
     locked: false,
     visible: true,
   }
@@ -1976,7 +1956,7 @@ function buildFallbackImportResult(
   warnings: string[],
 ): SlideImportResult {
   const emergency = html !== null
-  const rootStyle = root ? parseInlineStyle(root.getAttribute('style') || '') : {}
+  const rootStyle = root ? parseRuleDeclarations(root.getAttribute('style') || '') : {}
   const attrWidth = !emergency && root ? root.getAttribute('width') ?? undefined : undefined
   const attrHeight = !emergency && root ? root.getAttribute('height') ?? undefined : undefined
   const canvas = {
@@ -2030,7 +2010,7 @@ interface DeclaredCanvas {
 }
 
 function readDeclaredCanvas(root: HTMLElement, renderSnapshot: RenderSnapshot, warnings: string[]): DeclaredCanvas {
-  const rootStyle = parseInlineStyle(root.getAttribute('style') || '')
+  const rootStyle = parseRuleDeclarations(root.getAttribute('style') || '')
   const measuredRootRect = renderSnapshot.root ? measureNodeRect(renderSnapshot.root, renderSnapshot.root) : {}
   const explicitWidth = parseCanvasPx(rootStyle.width ?? root.getAttribute('width') ?? undefined, 'width', warnings)
   const explicitHeight = parseCanvasPx(rootStyle.height ?? root.getAttribute('height') ?? undefined, 'height', warnings)
@@ -2051,8 +2031,8 @@ function resolveCanvasBackground(
   renderSnapshot: RenderSnapshot,
   declared: DeclaredCanvas,
 ): string | undefined {
-  const sourceBodyStyle = doc.body ? parseInlineStyle(doc.body.getAttribute('style') || '') : {}
-  const sourceHtmlStyle = doc.documentElement ? parseInlineStyle(doc.documentElement.getAttribute('style') || '') : {}
+  const sourceBodyStyle = doc.body ? parseRuleDeclarations(doc.body.getAttribute('style') || '') : {}
+  const sourceHtmlStyle = doc.documentElement ? parseRuleDeclarations(doc.documentElement.getAttribute('style') || '') : {}
   const renderBody = renderSnapshot.root?.ownerDocument?.body
   const renderHtml = renderSnapshot.root?.ownerDocument?.documentElement
   const computedBodyStyle = renderBody ? readComputedStyleSafe(renderBody) : null
@@ -2290,7 +2270,7 @@ interface NodeBuildContext {
 // Turn one imported node into its component, preceded by any pseudo-element layers it hosts.
 function buildNodeComponents(node: HTMLElement, index: number, ctx: NodeBuildContext): SlideComponent[] {
   const { renderSnapshot, root, canvas, importMode, warnings } = ctx
-  const styleMap = parseInlineStyle(node.getAttribute('style') || '')
+  const styleMap = parseRuleDeclarations(node.getAttribute('style') || '')
   const nodeLabel = getNodeLabel(node)
   const nodeId = node.getAttribute('data-import-node-id') || ''
   const renderNode = renderSnapshot.nodesById.get(nodeId) || node

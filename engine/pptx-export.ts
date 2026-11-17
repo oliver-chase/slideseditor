@@ -10,7 +10,6 @@ interface SlidePptxExportInput {
 interface SlidePptxExportResult {
   blob: Blob
   warnings: string[]
-  slideCount: number
 }
 
 interface SlideDocumentPptxExportInput {
@@ -905,7 +904,6 @@ function convertSlidesToPptx(slidesInput: SlidePptxExportInput[]): SlidePptxExpo
   return {
     blob,
     warnings,
-    slideCount: slides.length,
   }
 }
 

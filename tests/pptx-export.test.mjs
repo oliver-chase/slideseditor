@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 
 const html = readFileSync(new URL('../slideeditor.html', import.meta.url), 'utf8')
 const bundle = html.split('<script>')[1].split('</script>')[0]
-const sandbox = { window: {}, console, TextEncoder, TextDecoder, Blob, URL }
+const sandbox = { window: {}, console, TextEncoder, TextDecoder, Blob, URL, atob, btoa }
 sandbox.self = sandbox.window
 vm.createContext(sandbox)
 vm.runInContext(bundle, sandbox)
@@ -56,5 +56,18 @@ assert.ok(!plainSpacing.includes('<a:lnSpc>') && !plainSpacing.includes(' spc=')
 const spaced = await slideXml('Spaced out', { lineHeight: 60, letterSpacing: 5 })
 assert.ok(spaced.includes('<a:lnSpc><a:spcPts val="4500"/></a:lnSpc>'), 'line-height 60px becomes 45pt line spacing')
 assert.ok(spaced.includes(' spc="375"'), 'letter-spacing 5px becomes 3.75pt character spacing')
+
+function exportImage(uri) {
+  const component = { id: 'img1', type: 'text', content: `<img src="${uri}" />`, x: 10, y: 10, width: 100, height: 100, locked: false, visible: true, sourceLabel: 'test', style: {} }
+  const document = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [component] })
+  return E.convertSlideDocumentsToPptx([{ id: 'slide-1', title: 'Test', document }])
+}
+
+const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+const pngResult = exportImage(png)
+assert.equal(pngResult.warnings.length, 0, 'a base64 PNG exports with no warning')
+
+const svgResult = exportImage('data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E')
+assert.ok(svgResult.warnings.some((w) => w.includes('img1') && w.includes('image/svg+xml')), 'an SVG with a utf8 parameter is reported by component, not dropped silently')
 
 console.log('pptx-export tests passed')

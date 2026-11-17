@@ -514,8 +514,9 @@ interface DecodedImage {
 }
 
 function decodeDataUriImage(uri: string, warnings: string[], ref: string): DecodedImage | null {
-  const match = uri.match(/^data:([^;,]+)(;base64)?,([\s\S]*)$/i)
+  const match = uri.match(/^data:([^;,]+)((?:;[^,]*)?),([\s\S]*)$/i)
   if (!match) return null
+  const isBase64 = /;base64$/i.test(match[2] || '')
   const mime = (match[1] || '').toLowerCase()
   const ext = IMAGE_MIME_EXT[mime]
   if (!ext) {
@@ -523,7 +524,7 @@ function decodeDataUriImage(uri: string, warnings: string[], ref: string): Decod
     return null
   }
   try {
-    const bytes = match[2]
+    const bytes = isBase64
       ? base64ToBytes(match[3] || '')
       : new TextEncoder().encode(decodeURIComponent(match[3] || ''))
     if (bytes.length === 0) return null

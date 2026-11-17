@@ -605,6 +605,7 @@ function resolveSvgImageFallback(node: HTMLElement, nodeLabel: string, warnings:
   const compactMarkup = rawMarkup
     .replace(/\s{2,}/g, ' ')
     .replace(/>\s+</g, '><')
+    .replace(/^<svg\b(?![^>]*\sxmlns=)/i, '<svg xmlns="http://www.w3.org/2000/svg"')
     .trim()
   const encodedMarkup = encodeURIComponent(compactMarkup)
   warnings.push('Node "' + nodeLabel + '" imported as inline SVG image fallback.')
@@ -1656,6 +1657,37 @@ async function drawSvgToPng(svgUrl: string, w: number, h: number, scale: number)
   try { return canvas.toDataURL('image/png') } catch { return null }
 }
 
+// PowerPoint cannot embed a plain SVG, so turn each SVG image into a PNG at the component's size.
+async function rasterizeSvgComponents(components: SlideComponent[], warnings: string[]): Promise<void> {
+  const svgImg = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"(data:image\/svg\+xml[^"]*)"|'(data:image\/svg\+xml[^']*)')/i
+  for (const component of components) {
+    const match = (component.content || '').match(svgImg)
+    if (!match) continue
+    const w = Math.max(1, Math.round(component.width || 0))
+    const h = Math.max(1, Math.round(component.height || component.width || 0))
+    const unescaped = (match[2] ?? match[3]).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+    const comma = unescaped.indexOf(',')
+    let markup = unescaped.slice(comma + 1)
+    try { markup = decodeURIComponent(markup) } catch { /* already plain text */ }
+    const img = await loadImageFromUrl('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup))
+    const canvas = document.createElement('canvas')
+    const scale = 2
+    canvas.width = w * scale
+    canvas.height = h * scale
+    const ctx = canvas.getContext('2d')
+    let png: string | null = null
+    if (img && ctx) {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      try { png = canvas.toDataURL('image/png') } catch { png = null }
+    }
+    if (png) {
+      component.content = component.content.replace(svgImg, (_all, head) => head + '"' + png + '"')
+    } else {
+      warnings.push('Component ' + component.id + ' SVG image could not be converted to a picture and will be skipped in PPTX.')
+    }
+  }
+}
+
 function isVisibleEl(el: HTMLElement, win: Window): boolean {
   const cs = win.getComputedStyle(el)
   if (cs.display === 'none' || cs.visibility === 'hidden') return false
@@ -2299,6 +2331,7 @@ export async function convertHtmlToSlideComponents(html: string): Promise<SlideI
       height: sourceCanvasHeight,
       ...(canvasBackground ? { background: canvasBackground } : {}),
     }
+    await rasterizeSvgComponents(components, warnings)
     const normalized = normalizeCanvasToContentBounds(components, canvas, warnings)
     canvas = normalized.canvas
     const normalizedComponents = normalized.components

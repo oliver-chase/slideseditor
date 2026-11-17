@@ -228,17 +228,19 @@ function convertSlidesToPptx(slidesInput: SlidePptxExportInput[]): SlidePptxExpo
 }
 
 export function convertSlideDocumentsToPptx(slidesInput: SlideDocumentPptxExportInput[]): SlidePptxExportResult {
-  return convertSlidesToPptx(slidesInput.map((slide) => {
-    const primarySlide = slide.document.deck.slides[0]
-    return {
-      id: slide.id,
+  // Every slide of every document becomes a PPTX slide. A document with no slides exports one empty slide.
+  return convertSlidesToPptx(slidesInput.flatMap((slide) => {
+    const deck = slide.document.deck
+    const deckSlides = deck.slides.length > 0 ? deck.slides : [undefined]
+    return deckSlides.map((deckSlide, index) => ({
+      id: index === 0 ? slide.id : `${slide.id}-${index + 1}`,
       title: slide.title,
       canvas: {
-        width: slide.document.deck.width,
-        height: slide.document.deck.height,
-        ...(primarySlide?.background?.fill ? { background: primarySlide.background.fill } : {}),
+        width: deck.width,
+        height: deck.height,
+        ...(deckSlide?.background?.fill ? { background: deckSlide.background.fill } : {}),
       },
-      components: Array.isArray(primarySlide?.elements) ? primarySlide.elements : [],
-    }
+      components: Array.isArray(deckSlide?.elements) ? deckSlide.elements : [],
+    }))
   }))
 }

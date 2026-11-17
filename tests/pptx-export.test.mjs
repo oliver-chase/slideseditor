@@ -116,4 +116,11 @@ const hslText = await slideXml('Colored', { color: 'hsl(200, 80%, 40%)', backgro
 assert.ok(hslText.includes('srgbClr val="1481B8"'), 'hsl text color converts')
 assert.ok(hslText.includes('srgbClr val="FF0000"') && hslText.includes('<a:alpha val="50000"'), 'hsl with a slash alpha converts')
 
+// Every slide of a document is exported, not only the first.
+const twoSlides = E.createSlideDocument({ canvas: { width: 1280, height: 720 }, components: [{ id: 'a', type: 'text', content: 'First slide', x: 0, y: 0, width: 200, height: 30, locked: false, visible: true, style: {} }] })
+twoSlides.deck.slides.push({ id: 'slide-2', elements: [{ id: 'b', type: 'text', content: 'Second slide', x: 0, y: 0, width: 200, height: 30, locked: false, visible: true, style: {} }] })
+const twoParts = unzip(await E.convertSlideDocumentsToPptx([{ id: 's', title: 't', document: twoSlides }]).blob.arrayBuffer())
+assert.ok(twoParts['ppt/slides/slide1.xml'].toString().includes('First slide'), 'slide 1 is exported')
+assert.ok(twoParts['ppt/slides/slide2.xml'] && twoParts['ppt/slides/slide2.xml'].toString().includes('Second slide'), 'slide 2 is exported')
+
 console.log('pptx-export tests passed')

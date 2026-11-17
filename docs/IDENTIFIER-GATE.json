@@ -6,13 +6,15 @@
     "CLAUDE.md",
     "engine/html-export.ts",
     "engine/pptx-export.ts",
-    "slideeditor.html"
+    "slideeditor.html",
+    "engine/pptx-parts.ts"
   ],
   "localDataReasons": {
     ".github/CODEOWNERS": "GitHub requires the repository owner's handle in the code-owners file.",
     "CLAUDE.md": "Names the GitHub account and Project the backlog lives in.",
     "engine/html-export.ts": "Oliver is the export file format's name: the data-oliver-* attributes and the title that the importer reads back.",
     "engine/pptx-export.ts": "Oliver is the name of the exported theme, which the PowerPoint importer matches.",
-    "slideeditor.html": "The built editor carries the same Oliver export format names as engine/html-export.ts and engine/pptx-export.ts."
+    "slideeditor.html": "The built editor carries the same Oliver export format names as engine/html-export.ts and engine/pptx-export.ts.",
+    "engine/pptx-parts.ts": "Oliver is the name of the exported theme, which the PowerPoint importer matches. Moved here from engine/pptx-export.ts."
   }
 }

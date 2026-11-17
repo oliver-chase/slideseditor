@@ -321,16 +321,25 @@ function classifyImportError(error         )                     {
   }
 }
 
-// ===== html-import.ts =====
+// ===== html-import-shared.ts =====
 const DEFAULT_CANVAS_WIDTH = 1920
+
 const DEFAULT_CANVAS_HEIGHT = 1080
+
 const CANVAS_TARGET_ASPECT_RATIO = DEFAULT_CANVAS_WIDTH / DEFAULT_CANVAS_HEIGHT
+
 const CANVAS_AUTO_SCALE_RATIO_THRESHOLD = 1.4
+
 const MIN_FLOW_NODE_SIZE = 12
+
 const IMPORT_AUTO_CANVAS_SCALE_MAX = 2.5
+
 const IMPORT_ROOT_MARKER_ATTR = 'data-import-root-id'
+
 const IMPORT_ROOT_MARKER_VALUE = 'import-root'
+
 const IMPORT_ROOT_NODE_ID = 'import-node-root'
+
 const FLOW_TEXT_TAGS = new Set([
   'h1',
   'h2',
@@ -348,8 +357,11 @@ const FLOW_TEXT_TAGS = new Set([
   'dt',
   'dd',
 ])
+
 const FLOW_MEDIA_TAGS = new Set(['img', 'picture', 'svg', 'canvas', 'video'])
+
 const CSS_IMPORT_MAX_RECURSION_DEPTH = 3
+
 const IMPORT_STYLE_PROPERTIES = [
   'color',
   'background-color',
@@ -382,108 +394,9 @@ const IMPORT_STYLE_PROPERTIES = [
   'box-shadow',
   'margin-left',
   'margin-top',
-]         
+]
 
-                        
-             
-               
-              
- 
-
-                            
-            
-            
-                
-                 
- 
-
-                         
-              
-              
-                  
-                   
-               
-                
- 
-
-                          
-                          
-                                     
-                     
- 
-
-function normalizeImportedHtmlMarkup(html        , warnings          )         {
-  const source = html.trim()
-  if (!source) return html
-
-  const htmlOpenRegex = /<html\b[^>]*>/gi
-  const htmlOpenMatches = Array.from(source.matchAll(htmlOpenRegex))
-  if (htmlOpenMatches.length <= 1) return source
-
-  const firstHtmlIndex = htmlOpenMatches[0].index ?? 0
-  const closeRegex = /<\/html>/gi
-  closeRegex.lastIndex = firstHtmlIndex
-  const firstCloseMatch = closeRegex.exec(source)
-
-  const doctypeMatch = source.match(/<!doctype[^>]*>/i)
-  const hasLeadingDoctype = !!doctypeMatch && (doctypeMatch.index ?? -1) < firstHtmlIndex
-  const prefix = hasLeadingDoctype ? `${doctypeMatch?.[0] || ''}\n` : ''
-  const sliced = firstCloseMatch
-    ? source.slice(firstHtmlIndex, closeRegex.lastIndex)
-    : source.slice(firstHtmlIndex)
-
-  warnings.push(`Detected ${htmlOpenMatches.length} HTML root tags; imported the first document block only.`)
-  return `${prefix}${sliced}`.trim()
-}
-
-function createSettlingTimeout(timeoutMs        )                {
-  return new Promise      ((resolve, reject) => {
-    window.setTimeout(() => {
-      reject(new Error(`Timeout waiting for import render settle after ${timeoutMs}ms.`))
-    }, timeoutMs)
-  })
-}
-
-async function waitForImageLoad(image                  )                {
-  if (image.complete) return
-  await new Promise((resolve) => {
-    const done = () => {
-      image.removeEventListener('load', done)
-      image.removeEventListener('error', done)
-      resolve(undefined)
-    }
-    image.addEventListener('load', done, { once: true })
-    image.addEventListener('error', done, { once: true })
-  })
-}
-
-async function settleRenderSnapshot(doc          )                {
-  if (!doc) return
-  const settleWait = new Promise      ((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-  })
-
-  const pending                          = [settleWait]
-  const documentFonts = (doc                                      ).fonts
-  if (documentFonts?.ready) {
-    pending.push(documentFonts.ready)
-  }
-
-  const images = Array.from(doc.querySelectorAll('img'))
-  for (const image of images) {
-    pending.push(waitForImageLoad(image))
-  }
-
-  try {
-    await Promise.race([
-      Promise.all(pending),
-      createSettlingTimeout(1500),
-    ])
-  } catch {
-    // Best-effort render settling for import fidelity.
-  }
-}
-
+// ===== html-import-css.ts =====
 function makeSafeResolvedUrl(rawUrl        , baseUrl        )                {
   try {
     return new URL(rawUrl, baseUrl).toString()
@@ -500,19 +413,6 @@ function parseStylesheetHref(styleSheet                 , baseUrl        )      
   if (resolved.startsWith('data:')) return null
   return resolved
 }
-
-                             
-                 
-                               
-               
-                   
- 
-
-                           
-                 
-                       
-                         
- 
 
 async function fetchWithTimeout(url        , timeoutMs = 1500)                         {
   const controller = new AbortController()
@@ -799,120 +699,223 @@ function parseRuleDeclarations(rawDeclarations        )                         
   return declarations
 }
 
-                                 
-                
-                            
-                                  
-                   
-               
- 
+// ===== html-import-render.ts =====
+function normalizeImportedHtmlMarkup(html        , warnings          )         {
+  const source = html.trim()
+  if (!source) return html
 
-function parsePseudoLayerDescriptors(styleText        , root             )                          {
-  const descriptors                          = []
-  const ruleRegex = /([^{}]+)\{([^{}]*)\}/g
-  let match                        
-  let order = 0
+  const htmlOpenRegex = /<html\b[^>]*>/gi
+  const htmlOpenMatches = Array.from(source.matchAll(htmlOpenRegex))
+  if (htmlOpenMatches.length <= 1) return source
 
-  while ((match = ruleRegex.exec(styleText)) !== null) {
-    const selectorList = match[1]?.trim() || ''
-    const declarationText = match[2] || ''
-    const styleMap = parseRuleDeclarations(declarationText)
-    if (Object.keys(styleMap).length === 0) {
-      order += 1
-      continue
-    }
+  const firstHtmlIndex = htmlOpenMatches[0].index ?? 0
+  const closeRegex = /<\/html>/gi
+  closeRegex.lastIndex = firstHtmlIndex
+  const firstCloseMatch = closeRegex.exec(source)
 
-    const selectors = selectorList.split(',').map((selector) => selector.trim()).filter(Boolean)
-    for (const selector of selectors) {
-      const pseudoMatch = selector.match(/^(.+?)(::before|::after|:before|:after)\s*$/i)
-      if (!pseudoMatch) continue
+  const doctypeMatch = source.match(/<!doctype[^>]*>/i)
+  const hasLeadingDoctype = !!doctypeMatch && (doctypeMatch.index ?? -1) < firstHtmlIndex
+  const prefix = hasLeadingDoctype ? `${doctypeMatch?.[0] || ''}\n` : ''
+  const sliced = firstCloseMatch
+    ? source.slice(firstHtmlIndex, closeRegex.lastIndex)
+    : source.slice(firstHtmlIndex)
 
-      const pseudo = pseudoMatch[2]?.toLowerCase().includes('before') ? 'before' : 'after'
-      const hostSelector = pseudoMatch[1]?.trim()
-      if (!hostSelector) continue
-
-      let hostNodes                = []
-      try {
-        hostNodes = Array.from(root.querySelectorAll(hostSelector)                           )
-        if (root.matches(hostSelector)) {
-          hostNodes = [root, ...hostNodes]
-        }
-      } catch {
-        continue
-      }
-
-      for (const hostNode of Array.from(hostNodes)) {
-        const hostId = hostNode.getAttribute('data-import-node-id')
-        if (!hostId) continue
-        descriptors.push({
-          hostId,
-          pseudo,
-          hostLabel: getNodeLabel(hostNode),
-          styleMap,
-          order,
-        })
-      }
-    }
-
-    order += 1
-  }
-
-  return descriptors
+  warnings.push(`Detected ${htmlOpenMatches.length} HTML root tags; imported the first document block only.`)
+  return `${prefix}${sliced}`.trim()
 }
 
-function buildPseudoContent(styleMap                        , pseudoNodeLabel        , warnings          )         {
-  const rawContent = styleMap.content || ''
-  if (!rawContent || rawContent.toLowerCase() === 'none') return ''
-
-  const isUrlImage = rawContent.startsWith('url(') && rawContent.endsWith(')')
-  if (isUrlImage) {
-    const parsedUrl = getCssImportUrl(rawContent)
-    if (!parsedUrl) {
-      warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content URL "' + rawContent + '" could not be parsed; ignored.')
-      return ''
-    }
-    warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content URL converted to image fallback.')
-    return `<img alt="${pseudoNodeLabel}" src="${parsedUrl}" />`
-  }
-
-  if (/^(attr|counters?)\(/i.test(rawContent)) {
-    warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content "' + rawContent + '" is not supported; ignored.')
-    return ''
-  }
-
-  return escapeHtmlText(decodeCssEscapes(stripWrappingQuotes(rawContent)))
-}
-
-// "\e900" and "\201C " are CSS escapes for one character each; a backslash before any other character yields that character.
-function decodeCssEscapes(text        )         {
-  return text.replace(/\\([0-9a-fA-F]{1,6})\s?|\\([\s\S])/g, (_match, hex                    , literal                    ) => {
-    if (literal !== undefined) return literal
-    const codePoint = Number.parseInt(hex          , 16)
-    return codePoint === 0 || codePoint > 0x10ffff ? '\ufffd' : String.fromCodePoint(codePoint)
+function createSettlingTimeout(timeoutMs        )                {
+  return new Promise      ((resolve, reject) => {
+    window.setTimeout(() => {
+      reject(new Error(`Timeout waiting for import render settle after ${timeoutMs}ms.`))
+    }, timeoutMs)
   })
 }
 
-function computePseudoOffset(
-  styleMap                        ,
-  axis           ,
-  hostRect                  ,
-  nodeLabel        ,
-  warnings          ,
-)         {
-  const key = axis === 'x' ? 'left' : 'top'
-  const axisSize = axis === 'x' ? (hostRect.width || 0) : (hostRect.height || 0)
-  const parsed = parseStylePositionPx(styleMap, key, nodeLabel, warnings, axisSize)
-  if (typeof parsed === 'number' && Number.isFinite(parsed)) return parsed
-  return 0
+async function waitForImageLoad(image                  )                {
+  if (image.complete) return
+  await new Promise((resolve) => {
+    const done = () => {
+      image.removeEventListener('load', done)
+      image.removeEventListener('error', done)
+      resolve(undefined)
+    }
+    image.addEventListener('load', done, { once: true })
+    image.addEventListener('error', done, { once: true })
+  })
 }
 
-function shouldImportPseudoLayer(styleMap                        , width                    , height                    )          {
-  if (styleMap.content && styleMap.content.toLowerCase() !== 'none') return true
-  if (parseRuleValueExists(styleMap, 'background') || parseRuleValueExists(styleMap, 'background-color') || parseRuleValueExists(styleMap, 'background-image')) return true
-  if (parseRuleValueExists(styleMap, 'border') || parseRuleValueExists(styleMap, 'border-color') || parseRuleValueExists(styleMap, 'box-shadow')) return true
-  return typeof width === 'number' || typeof height === 'number'
+async function settleRenderSnapshot(doc          )                {
+  if (!doc) return
+  const settleWait = new Promise      ((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+
+  const pending                          = [settleWait]
+  const documentFonts = (doc                                      ).fonts
+  if (documentFonts?.ready) {
+    pending.push(documentFonts.ready)
+  }
+
+  const images = Array.from(doc.querySelectorAll('img'))
+  for (const image of images) {
+    pending.push(waitForImageLoad(image))
+  }
+
+  try {
+    await Promise.race([
+      Promise.all(pending),
+      createSettlingTimeout(1500),
+    ])
+  } catch {
+    // Best-effort render settling for import fidelity.
+  }
 }
 
+function readComputedStyleSafe(node             )                             {
+  const styleWindow = node.ownerDocument?.defaultView || (typeof window !== 'undefined' ? window : null)
+  if (!styleWindow || typeof styleWindow.getComputedStyle !== 'function') return null
+  try {
+    return styleWindow.getComputedStyle(node)
+  } catch {
+    return null
+  }
+}
+
+function measureNodeRect(node             , root             )                   {
+  if (typeof node.getBoundingClientRect !== 'function' || typeof root.getBoundingClientRect !== 'function') {
+    return {}
+  }
+
+  const rect = node.getBoundingClientRect()
+  const rootRect = root.getBoundingClientRect()
+  if (!Number.isFinite(rect.left) || !Number.isFinite(rootRect.left)) return {}
+
+  return {
+    x: rect.left - rootRect.left,
+    y: rect.top - rootRect.top,
+    width: Number.isFinite(rect.width) && rect.width > 0 ? rect.width : undefined,
+    height: Number.isFinite(rect.height) && rect.height > 0 ? rect.height : undefined,
+  }
+}
+
+function emptyRenderSnapshot()                 {
+  return { root: null, nodesById: new Map(), dispose: () => {} }
+}
+
+// An invisible, script-less iframe that lays the slide out at 1920x1080 for measuring.
+function createHiddenRenderFrame()                    {
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  iframe.tabIndex = -1
+  iframe.style.position = 'fixed'
+  iframe.style.left = '-100000px'
+  iframe.style.top = '-100000px'
+  iframe.style.width = '1920px'
+  iframe.style.height = '1080px'
+  iframe.style.opacity = '0'
+  iframe.style.pointerEvents = 'none'
+  iframe.style.zIndex = '-1'
+  iframe.style.overflow = 'hidden'
+  iframe.setAttribute('sandbox', 'allow-same-origin')
+  document.body.appendChild(iframe)
+  return iframe
+}
+
+// Copy the parsed slide into the sandbox body and return the clone of its root.
+function cloneSlideIntoSandbox(sandboxBody             , doc          , root             )              {
+  let rootClone                     = null
+  const sourceBody = doc.body
+  if (sourceBody) {
+    const bodyClone = sourceBody.cloneNode(true)               
+    for (const attr of Array.from(sourceBody.attributes)) {
+      sandboxBody.setAttribute(attr.name, attr.value)
+    }
+    const sourceRootIsBody = root === sourceBody
+    sandboxBody.replaceChildren(...Array.from(bodyClone.childNodes))
+
+    if (sourceRootIsBody) {
+      sandboxBody.setAttribute(IMPORT_ROOT_MARKER_ATTR, IMPORT_ROOT_MARKER_VALUE)
+      rootClone = sandboxBody
+    } else {
+      rootClone = sandboxBody.querySelector             (`[${IMPORT_ROOT_MARKER_ATTR}="${IMPORT_ROOT_MARKER_VALUE}"]`)
+    }
+  }
+
+  if (!rootClone) {
+    rootClone = root.cloneNode(true)               
+    sandboxBody.replaceChildren(rootClone)
+  }
+  return rootClone
+}
+
+function indexNodesById(sandboxDoc          )                           {
+  const nodesById = new Map                     ()
+  for (const node of Array.from(sandboxDoc.querySelectorAll             ('[data-import-node-id]'))) {
+    const id = node.getAttribute('data-import-node-id')
+    if (!id) continue
+    nodesById.set(id, node)
+  }
+  return nodesById
+}
+
+async function buildRenderSnapshot(doc          , root             , styleChunks                     )                          {
+  if (typeof document === 'undefined' || !document.body) return emptyRenderSnapshot()
+
+  const iframe = createHiddenRenderFrame()
+  const sandboxDoc = iframe.contentDocument
+  if (!sandboxDoc) {
+    iframe.remove()
+    return emptyRenderSnapshot()
+  }
+
+  sandboxDoc.open()
+  sandboxDoc.write('<!doctype html><html><head></head><body></body></html>')
+  sandboxDoc.close()
+
+  const sandboxBody = sandboxDoc.body
+  if (!sandboxBody) {
+    iframe.remove()
+    return emptyRenderSnapshot()
+  }
+
+  sandboxBody.style.margin = '0'
+  sandboxBody.style.padding = '0'
+  sandboxBody.style.overflow = 'hidden'
+
+  if (styleChunks.length > 0 && sandboxDoc.head) {
+    const styleEl = sandboxDoc.createElement('style')
+    styleEl.textContent = styleChunks
+      .map(({ cssText }) => cssText)
+      .filter(Boolean)
+      .join('\n')
+    sandboxDoc.head.appendChild(styleEl)
+  }
+
+  const rootClone = cloneSlideIntoSandbox(sandboxBody, doc, root)
+  await settleRenderSnapshot(sandboxDoc)
+
+  return {
+    root: rootClone,
+    nodesById: indexNodesById(sandboxDoc),
+    dispose: () => {
+      iframe.remove()
+    },
+  }
+}
+
+function hasOwnTextNode(node             )          {
+  return Array.from(node.childNodes).some((child) => child.nodeType === 3 && Boolean(child.textContent?.trim()))
+}
+
+function isVisibleEl(el             , win        )          {
+  const cs = win.getComputedStyle(el)
+  if (cs.display === 'none' || cs.visibility === 'hidden') return false
+  const op = parseFloat(cs.opacity || '1')
+  return !(Number.isFinite(op) && op <= 0.01)
+}
+
+// ===== html-import-values.ts =====
 function parseRuleValueExists(styleMap                        , key        )          {
   return typeof styleMap[key] === 'string' && styleMap[key].trim().length > 0
 }
@@ -933,19 +936,6 @@ function resolveFontFamily(rawFamily        , warnings          , nodeLabel     
   const sanitized = rawFamily.trim() ? `${rawFamily}, ${fallback}` : fallback
   warnings.push('Node "' + nodeLabel + '" font-family "' + rawFamily + '" normalized with fallback "' + fallback + '".')
   return sanitized
-}
-
-function resolveSvgImageFallback(node             , nodeLabel        , warnings          )         {
-  const rawMarkup = node.outerHTML || ''
-  if (!rawMarkup.trim()) return ''
-  const compactMarkup = rawMarkup
-    .replace(/\s{2,}/g, ' ')
-    .replace(/>\s+</g, '><')
-    .replace(/^<svg\b(?![^>]*\sxmlns=)/i, '<svg xmlns="http://www.w3.org/2000/svg"')
-    .trim()
-  const encodedMarkup = encodeURIComponent(compactMarkup)
-  warnings.push('Node "' + nodeLabel + '" imported as inline SVG image fallback.')
-  return `<img alt="${nodeLabel}" src="data:image/svg+xml;utf8,${encodedMarkup}" />`
 }
 
 function parseLength(value                           )                           {
@@ -973,43 +963,6 @@ function isPxLike(length              )          {
 function parsePositivePx(rawValue                           )                     {
   const px = parsePxLength(rawValue ?? undefined)
   return px !== undefined && px > 0 ? px : undefined
-}
-
-function estimateNodeAreaFromDeclaredSize(node             )         {
-  const styleMap = parseRuleDeclarations(node.getAttribute('style') || '')
-  const width = parsePositivePx(styleMap.width ?? node.getAttribute('width'))
-  const height = parsePositivePx(styleMap.height ?? node.getAttribute('height'))
-  if (!width || !height) return 0
-  return width * height
-}
-
-function sanitizeNodeInPlace(root             )       {
-  root.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(el => el.remove())
-
-  const allNodes = [root, ...Array.from(root.querySelectorAll             ('*'))]
-  for (const element of allNodes) {
-    for (const attr of Array.from(element.attributes)) {
-      const attrName = attr.name.toLowerCase()
-      const attrValue = attr.value.trim().toLowerCase()
-      if (attrName.startsWith('on')) {
-        element.removeAttribute(attr.name)
-        continue
-      }
-      if ((attrName === 'href' || attrName === 'src') && attrValue.startsWith('javascript:')) {
-        element.removeAttribute(attr.name)
-      }
-    }
-  }
-}
-
-function readComputedStyleSafe(node             )                             {
-  const styleWindow = node.ownerDocument?.defaultView || (typeof window !== 'undefined' ? window : null)
-  if (!styleWindow || typeof styleWindow.getComputedStyle !== 'function') return null
-  try {
-    return styleWindow.getComputedStyle(node)
-  } catch {
-    return null
-  }
 }
 
 function normalizeColor(value                    )                     {
@@ -1090,56 +1043,114 @@ function hasRenderedBorder(style                     )          {
   return false
 }
 
-function serializeInlineImportStyle(computedStyle                            )         {
-  if (!computedStyle) return ''
-  const entries           = []
-  for (const property of IMPORT_STYLE_PROPERTIES) {
-    const value = computedStyle.getPropertyValue(property).trim()
-    if (!value) continue
-    if (property === 'background-color' && !normalizeColor(value)) continue
-    if (property === 'border-top' || property === 'border-right' || property === 'border-bottom' || property === 'border-left') {
-      if (value === '0px none rgb(0, 0, 0)' || value === 'none') continue
-    }
-    entries.push(`${property}: ${value}`)
+function parseFontWeight(value                    )                     {
+  if (!value) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return undefined
+  if (normalized === 'normal') return 400
+  if (normalized === 'bold') return 700
+  const parsed = Number.parseInt(normalized, 10)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function normalizeTextAlign(value                    )                                               {
+  if (!value) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'start') return 'left'
+  if (normalized === 'end') return 'right'
+  if (normalized === 'left' || normalized === 'center' || normalized === 'right' || normalized === 'justify') {
+    return normalized
   }
-  return entries.join('; ')
+  return undefined
 }
 
-function buildSanitizedContentNode(node             )              {
-  const clone = node.cloneNode(true)               
-  const sourceNodes = [node, ...Array.from(node.querySelectorAll             ('*'))]
-  const cloneNodes = [clone, ...Array.from(clone.querySelectorAll             ('*'))]
-  const count = Math.min(sourceNodes.length, cloneNodes.length)
+function parsePxLength(value                    )                     {
+  const parsed = parseLength(value)
+  if (!parsed || !isPxLike(parsed)) return undefined
+  return parsed.value
+}
 
-  for (let index = 0; index < count; index += 1) {
-    const inlineStyle = serializeInlineImportStyle(readComputedStyleSafe(sourceNodes[index]))
-    if (inlineStyle) cloneNodes[index].setAttribute('style', inlineStyle)
+function normalizeBorderStyle(value                    )                     {
+  if (!value) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (!normalized || normalized === 'none' || normalized === 'hidden') return undefined
+  return normalized
+}
+
+// Split a `border` shorthand (e.g. "1px solid #ccc" or "2px dashed red") into its
+// width / style / color parts. Only used when the specific longhand property is
+// absent; otherwise the shorthand color leaks into the color slot and is later
+// rejected by the exporter, dropping the border entirely.
+function parseBorderShorthand(value                    )                                                     {
+  if (!value) return {}
+  const raw = value.trim()
+  if (!raw) return {}
+
+  const colorFuncOrHex = raw.match(/#[0-9a-fA-F]{3,8}\b|(?:rgb|rgba|hsl|hsla)\([^)]*\)/)
+  let color = colorFuncOrHex ? colorFuncOrHex[0] : undefined
+  let rest = color ? raw.replace(color, ' ') : raw
+
+  const styleMatch = rest.match(/\b(solid|dashed|dotted|double|groove|ridge|inset|outset|none|hidden)\b/i)
+  const style = styleMatch ? styleMatch[0] : undefined
+  if (styleMatch) rest = rest.replace(styleMatch[0], ' ')
+
+  const widthMatch = rest.match(/-?\d*\.?\d+(?:px|em|rem|pt|%)?/)
+  const width = widthMatch ? widthMatch[0] : undefined
+  if (widthMatch) rest = rest.replace(widthMatch[0], ' ')
+
+  if (!color) {
+    const remaining = rest.trim().split(/\s+/).filter(Boolean)
+    if (remaining.length > 0) color = remaining[remaining.length - 1]
   }
 
-  sanitizeNodeInPlace(clone)
-  return clone
+  return { width, style, color }
 }
 
-function inferType(node             )                     {
-  const className = (node.className || '').toString().toLowerCase()
-  const text = (node.textContent || '').trim().toLowerCase()
-  const tag = node.tagName.toLowerCase()
-  const alt = (node.getAttribute('alt') || '').toLowerCase()
+function extractStyle(
+  styleMap                        ,
+  computedStyle                            ,
+  warnings           = [],
+  nodeLabel = 'element',
+)                      {
+  const fontSizeLength = parseLength(computedStyle?.fontSize || styleMap['font-size'])
+  const lineHeightLength = parseLength(computedStyle?.lineHeight || styleMap['line-height'])
+  const letterSpacingLength = parseLength(computedStyle?.letterSpacing || styleMap['letter-spacing'])
+  const fontWeight = parseFontWeight(computedStyle?.fontWeight || styleMap['font-weight'])
+  const color = normalizeColor(computedStyle?.color || styleMap.color)
+  const { backgroundFill, backgroundColor } = resolveComputedBackground(computedStyle, styleMap)
+  const borderShorthand = parseBorderShorthand(styleMap.border)
+  const borderColor = normalizeColor(computedStyle?.borderColor || styleMap['border-color'] || borderShorthand.color)
+  const borderWidth = parsePxLength(computedStyle?.borderWidth || styleMap['border-width'] || borderShorthand.width)
+  const borderStyle = normalizeBorderStyle(computedStyle?.borderStyle || styleMap['border-style'] || borderShorthand.style)
+  const borderRadius = parsePxLength(computedStyle?.borderRadius || styleMap['border-radius'])
+  const shadowRaw = (computedStyle?.boxShadow || styleMap['box-shadow'] || '').trim()
+  const boxShadow = shadowRaw && shadowRaw.toLowerCase() !== 'none' ? shadowRaw : undefined
+  const fontStyleRaw = (computedStyle?.fontStyle || styleMap['font-style'] || '').trim().toLowerCase()
+  const fontStyle = fontStyleRaw === 'italic' ? 'italic' : undefined
+  const textAlign = normalizeTextAlign(computedStyle?.textAlign || styleMap['text-align'])
+  const fontFamilyRaw = (computedStyle?.fontFamily || styleMap['font-family'] || '').trim()
+  const fontFamily = resolveFontFamily(fontFamilyRaw, warnings, nodeLabel)
 
-  if (tag === 'svg') return 'logo'
-  if (tag === 'img' && (className.includes('logo') || alt.includes('logo'))) return 'logo'
-  if (className.includes('subheading') || className.includes('subtitle')) return 'subheading'
-  if (tag === 'h1' || tag === 'h2' || className.includes('heading') || className.includes('title')) return 'heading'
-  if (tag === 'h3' || tag === 'h4') return 'subheading'
-  if (className.includes('tagline') || className.includes('tag-line')) return 'tag-line'
-  if (className.includes('stat') || className.includes('metric')) return 'stat'
-  if (className.includes('card') || className.includes('artifact') || /\bart\b/.test(className)) return 'card'
-  if (className.includes('row')) return 'row'
-  if (className.includes('panel') || className.includes('container')) return 'panel'
-  if (text.length <= 32 && /\d/.test(text) && className.includes('kpi')) return 'stat'
-  return 'text'
+  return {
+    fontSize: fontSizeLength && isPxLike(fontSizeLength) ? fontSizeLength.value : undefined,
+    fontWeight,
+    fontFamily,
+    color,
+    backgroundColor,
+    backgroundFill,
+    borderColor,
+    borderWidth: typeof borderWidth === 'number' && borderWidth > 0 ? borderWidth : undefined,
+    borderStyle,
+    borderRadius: typeof borderRadius === 'number' && borderRadius > 0 ? borderRadius : undefined,
+    boxShadow,
+    fontStyle,
+    lineHeight: lineHeightLength && isPxLike(lineHeightLength) ? lineHeightLength.value : undefined,
+    letterSpacing: letterSpacingLength && isPxLike(letterSpacingLength) && letterSpacingLength.value !== 0 ? letterSpacingLength.value : undefined,
+    textAlign,
+  }
 }
 
+// ===== html-import-position.ts =====
 function parseStylePx(
   styleMap                        ,
   key        ,
@@ -1341,111 +1352,259 @@ function parseTransformOffsets(
   return { x: 0, y: 0 }
 }
 
-function parseFontWeight(value                    )                     {
-  if (!value) return undefined
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return undefined
-  if (normalized === 'normal') return 400
-  if (normalized === 'bold') return 700
-  const parsed = Number.parseInt(normalized, 10)
-  return Number.isFinite(parsed) ? parsed : undefined
+function asCanonicalDimension(value                    , fallback = 0)         {
+  if (value === undefined || !Number.isFinite(value)) return fallback
+  const rounded = Number(value.toFixed(3))
+  const nearestInteger = Math.round(rounded)
+  if (Math.abs(rounded - nearestInteger) <= 0.5) return nearestInteger
+  return rounded
 }
 
-function normalizeTextAlign(value                    )                                               {
-  if (!value) return undefined
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'start') return 'left'
-  if (normalized === 'end') return 'right'
-  if (normalized === 'left' || normalized === 'center' || normalized === 'right' || normalized === 'justify') {
-    return normalized
-  }
-  return undefined
+function asCanonicalDimensionOptional(value                    )                     {
+  if (value === undefined) return undefined
+  if (!Number.isFinite(value)) return undefined
+  const rounded = Number(value.toFixed(3))
+  const nearestInteger = Math.round(rounded)
+  if (Math.abs(rounded - nearestInteger) <= 0.5) return nearestInteger
+  return rounded
 }
 
-function parsePxLength(value                    )                     {
-  const parsed = parseLength(value)
-  if (!parsed || !isPxLike(parsed)) return undefined
-  return parsed.value
-}
+function getComponentContentBounds(components                  )                       {
+  if (components.length === 0) return null
 
-function normalizeBorderStyle(value                    )                     {
-  if (!value) return undefined
-  const normalized = value.trim().toLowerCase()
-  if (!normalized || normalized === 'none' || normalized === 'hidden') return undefined
-  return normalized
-}
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxRight = 0
+  let maxBottom = 0
 
-// Split a `border` shorthand (e.g. "1px solid #ccc" or "2px dashed red") into its
-// width / style / color parts. Only used when the specific longhand property is
-// absent; otherwise the shorthand color leaks into the color slot and is later
-// rejected by the exporter, dropping the border entirely.
-function parseBorderShorthand(value                    )                                                     {
-  if (!value) return {}
-  const raw = value.trim()
-  if (!raw) return {}
-
-  const colorFuncOrHex = raw.match(/#[0-9a-fA-F]{3,8}\b|(?:rgb|rgba|hsl|hsla)\([^)]*\)/)
-  let color = colorFuncOrHex ? colorFuncOrHex[0] : undefined
-  let rest = color ? raw.replace(color, ' ') : raw
-
-  const styleMatch = rest.match(/\b(solid|dashed|dotted|double|groove|ridge|inset|outset|none|hidden)\b/i)
-  const style = styleMatch ? styleMatch[0] : undefined
-  if (styleMatch) rest = rest.replace(styleMatch[0], ' ')
-
-  const widthMatch = rest.match(/-?\d*\.?\d+(?:px|em|rem|pt|%)?/)
-  const width = widthMatch ? widthMatch[0] : undefined
-  if (widthMatch) rest = rest.replace(widthMatch[0], ' ')
-
-  if (!color) {
-    const remaining = rest.trim().split(/\s+/).filter(Boolean)
-    if (remaining.length > 0) color = remaining[remaining.length - 1]
+  for (const component of components) {
+    const width = Number.isFinite(component.width) ? component.width : 0
+    const height = Number.isFinite(component.height || 0) ? (component.height || 0) : 0
+    minX = Math.min(minX, component.x)
+    minY = Math.min(minY, component.y)
+    maxRight = Math.max(maxRight, component.x + Math.max(0, width))
+    maxBottom = Math.max(maxBottom, component.y + Math.max(0, height))
   }
 
-  return { width, style, color }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null
+  const width = Math.max(1, maxRight - minX)
+  const height = Math.max(1, maxBottom - minY)
+  return { minX, minY, maxRight, maxBottom, width, height }
 }
 
-function extractStyle(
-  styleMap                        ,
-  computedStyle                            ,
-  warnings           = [],
-  nodeLabel = 'element',
-)                      {
-  const fontSizeLength = parseLength(computedStyle?.fontSize || styleMap['font-size'])
-  const lineHeightLength = parseLength(computedStyle?.lineHeight || styleMap['line-height'])
-  const letterSpacingLength = parseLength(computedStyle?.letterSpacing || styleMap['letter-spacing'])
-  const fontWeight = parseFontWeight(computedStyle?.fontWeight || styleMap['font-weight'])
-  const color = normalizeColor(computedStyle?.color || styleMap.color)
-  const { backgroundFill, backgroundColor } = resolveComputedBackground(computedStyle, styleMap)
-  const borderShorthand = parseBorderShorthand(styleMap.border)
-  const borderColor = normalizeColor(computedStyle?.borderColor || styleMap['border-color'] || borderShorthand.color)
-  const borderWidth = parsePxLength(computedStyle?.borderWidth || styleMap['border-width'] || borderShorthand.width)
-  const borderStyle = normalizeBorderStyle(computedStyle?.borderStyle || styleMap['border-style'] || borderShorthand.style)
-  const borderRadius = parsePxLength(computedStyle?.borderRadius || styleMap['border-radius'])
-  const shadowRaw = (computedStyle?.boxShadow || styleMap['box-shadow'] || '').trim()
-  const boxShadow = shadowRaw && shadowRaw.toLowerCase() !== 'none' ? shadowRaw : undefined
-  const fontStyleRaw = (computedStyle?.fontStyle || styleMap['font-style'] || '').trim().toLowerCase()
-  const fontStyle = fontStyleRaw === 'italic' ? 'italic' : undefined
-  const textAlign = normalizeTextAlign(computedStyle?.textAlign || styleMap['text-align'])
-  const fontFamilyRaw = (computedStyle?.fontFamily || styleMap['font-family'] || '').trim()
-  const fontFamily = resolveFontFamily(fontFamilyRaw, warnings, nodeLabel)
+function normalizeCanvasToContentBounds(
+  components                  ,
+  canvas                                                        ,
+  warnings          ,
+)                                                                                                   {
+  const bounds = getComponentContentBounds(components)
+  if (!bounds) return { components, canvas }
+
+  const oversizedCanvas = canvas.width > 4096 || canvas.height > 4096
+  if (!oversizedCanvas) return { components, canvas }
+
+  const shifted = components.map((component) => ({
+    ...component,
+    x: asCanonicalDimension(component.x - bounds.minX),
+    y: asCanonicalDimension(component.y - bounds.minY),
+  }))
+  const normalizedCanvas = {
+    ...canvas,
+    width: asCanonicalDimension(Math.max(1, bounds.width)),
+    height: asCanonicalDimension(Math.max(1, bounds.height)),
+  }
+  warnings.push(
+    `Normalized oversized canvas to content bounds ${normalizedCanvas.width}x${normalizedCanvas.height} for import usability.`,
+  )
+  return { components: shifted, canvas: normalizedCanvas }
+}
+
+function measureContentBounds(
+  nodes               ,
+  snapshot                ,
+  root             ,
+)                                      {
+  let maxRight = 0
+  let maxBottom = 0
+
+  for (const node of nodes) {
+    const nodeId = node.getAttribute('data-import-node-id') || ''
+    const renderNode = snapshot.nodesById.get(nodeId) || node
+    const renderRoot = snapshot.root || root
+    const measured = measureNodeRect(renderNode, renderRoot)
+    if (measured.width === undefined || measured.height === undefined) continue
+    const x = measured.x || 0
+    const y = measured.y || 0
+    maxRight = Math.max(maxRight, x + measured.width)
+    maxBottom = Math.max(maxBottom, y + measured.height)
+  }
 
   return {
-    fontSize: fontSizeLength && isPxLike(fontSizeLength) ? fontSizeLength.value : undefined,
-    fontWeight,
-    fontFamily,
-    color,
-    backgroundColor,
-    backgroundFill,
-    borderColor,
-    borderWidth: typeof borderWidth === 'number' && borderWidth > 0 ? borderWidth : undefined,
-    borderStyle,
-    borderRadius: typeof borderRadius === 'number' && borderRadius > 0 ? borderRadius : undefined,
-    boxShadow,
-    fontStyle,
-    lineHeight: lineHeightLength && isPxLike(lineHeightLength) ? lineHeightLength.value : undefined,
-    letterSpacing: letterSpacingLength && isPxLike(letterSpacingLength) && letterSpacingLength.value !== 0 ? letterSpacingLength.value : undefined,
-    textAlign,
+    width: maxRight > 0 ? maxRight : undefined,
+    height: maxBottom > 0 ? maxBottom : undefined,
   }
+}
+
+function clampAutoImportCanvasAxis(axisValue        , label                    , warnings          )         {
+  const defaultAxis = label === 'width' ? DEFAULT_CANVAS_WIDTH : DEFAULT_CANVAS_HEIGHT
+  const maxAxis = Math.round(defaultAxis * IMPORT_AUTO_CANVAS_SCALE_MAX)
+  if (axisValue <= maxAxis) return axisValue
+
+  warnings.push(
+    `Source ${label} ${axisValue}px exceeds auto-import safety cap ${maxAxis}px; clamped to avoid compressed output.`,
+  )
+  return maxAxis
+}
+
+// Pick the x and y of a node from the first source that has one: its measured box
+// (when nested), its own left/top, its margins, computed style, then the measured box.
+function resolveNodePosition(
+  renderNode             ,
+  renderRoot             ,
+  styleMap                        ,
+  computedStyle                            ,
+  measured                  ,
+  canvas                                   ,
+  nodeLabel        ,
+  warnings          ,
+)                           {
+  const explicitLeft = parseStylePositionPx(styleMap, 'left', nodeLabel, warnings, canvas.width)
+  const explicitTop = parseStylePositionPx(styleMap, 'top', nodeLabel, warnings, canvas.height)
+  const explicitMarginLeft = parseStyleOffsetPx(styleMap, 'margin-left', nodeLabel, warnings, canvas.width)
+  const explicitMarginTop = parseStyleOffsetPx(styleMap, 'margin-top', nodeLabel, warnings, canvas.height)
+  const computedLeft = parseComputedPositionPx(computedStyle?.left, 'left', nodeLabel, warnings, canvas.width)
+  const computedTop = parseComputedPositionPx(computedStyle?.top, 'top', nodeLabel, warnings, canvas.height)
+  const computedMarginLeft = parseStyleOffsetPx({ 'margin-left': computedStyle?.marginLeft || '' }, 'margin-left', nodeLabel, warnings, canvas.width)
+  const computedMarginTop = parseStyleOffsetPx({ 'margin-top': computedStyle?.marginTop || '' }, 'margin-top', nodeLabel, warnings, canvas.height)
+  const transformOffsets = parseTransformOffsets(styleMap.transform, nodeLabel, warnings)
+  const layoutX = Number.isFinite(renderNode.offsetLeft) ? renderNode.offsetLeft : undefined
+  const layoutY = Number.isFinite(renderNode.offsetTop) ? renderNode.offsetTop : undefined
+  const measuredX = typeof measured.x === 'number' && Number.isFinite(measured.x) ? measured.x : undefined
+  const measuredY = typeof measured.y === 'number' && Number.isFinite(measured.y) ? measured.y : undefined
+  const measuredOrLayoutX = measuredX !== undefined
+    ? ((measuredX === 0 && layoutX !== undefined && layoutX > 0) ? layoutX : measuredX)
+    : layoutX
+  const measuredOrLayoutY = measuredY !== undefined
+    ? ((measuredY === 0 && layoutY !== undefined && layoutY > 0) ? layoutY : measuredY)
+    : layoutY
+  const hasNestedRenderParent = Boolean(
+    renderRoot &&
+    renderNode.parentElement &&
+    renderNode.parentElement !== renderRoot &&
+    renderRoot.contains(renderNode.parentElement),
+  )
+  const preferredMeasuredX = hasNestedRenderParent ? measuredOrLayoutX : undefined
+  const preferredMeasuredY = hasNestedRenderParent ? measuredOrLayoutY : undefined
+  const baseX = preferredMeasuredX ?? explicitLeft ?? explicitMarginLeft ?? computedLeft ?? computedMarginLeft ?? measuredOrLayoutX ?? 0
+  const baseY = preferredMeasuredY ?? explicitTop ?? explicitMarginTop ?? computedTop ?? computedMarginTop ?? measuredOrLayoutY ?? 0
+  const baseXUsesMeasuredRect = preferredMeasuredX !== undefined || (
+    explicitLeft === undefined &&
+    explicitMarginLeft === undefined &&
+    computedLeft === undefined &&
+    computedMarginLeft === undefined &&
+    measuredOrLayoutX !== undefined
+  )
+  const baseYUsesMeasuredRect = preferredMeasuredY !== undefined || (
+    explicitTop === undefined &&
+    explicitMarginTop === undefined &&
+    computedTop === undefined &&
+    computedMarginTop === undefined &&
+    measuredOrLayoutY !== undefined
+  )
+  const transformX = baseXUsesMeasuredRect && measuredX !== undefined ? 0 : transformOffsets.x
+  const transformY = baseYUsesMeasuredRect && measuredY !== undefined ? 0 : transformOffsets.y
+  return { x: baseX + transformX, y: baseY + transformY }
+}
+
+// ===== html-import-markup.ts =====
+function resolveSvgImageFallback(node             , nodeLabel        , warnings          )         {
+  const rawMarkup = node.outerHTML || ''
+  if (!rawMarkup.trim()) return ''
+  const compactMarkup = rawMarkup
+    .replace(/\s{2,}/g, ' ')
+    .replace(/>\s+</g, '><')
+    .replace(/^<svg\b(?![^>]*\sxmlns=)/i, '<svg xmlns="http://www.w3.org/2000/svg"')
+    .trim()
+  const encodedMarkup = encodeURIComponent(compactMarkup)
+  warnings.push('Node "' + nodeLabel + '" imported as inline SVG image fallback.')
+  return `<img alt="${nodeLabel}" src="data:image/svg+xml;utf8,${encodedMarkup}" />`
+}
+
+function estimateNodeAreaFromDeclaredSize(node             )         {
+  const styleMap = parseRuleDeclarations(node.getAttribute('style') || '')
+  const width = parsePositivePx(styleMap.width ?? node.getAttribute('width'))
+  const height = parsePositivePx(styleMap.height ?? node.getAttribute('height'))
+  if (!width || !height) return 0
+  return width * height
+}
+
+function sanitizeNodeInPlace(root             )       {
+  root.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(el => el.remove())
+
+  const allNodes = [root, ...Array.from(root.querySelectorAll             ('*'))]
+  for (const element of allNodes) {
+    for (const attr of Array.from(element.attributes)) {
+      const attrName = attr.name.toLowerCase()
+      const attrValue = attr.value.trim().toLowerCase()
+      if (attrName.startsWith('on')) {
+        element.removeAttribute(attr.name)
+        continue
+      }
+      if ((attrName === 'href' || attrName === 'src') && attrValue.startsWith('javascript:')) {
+        element.removeAttribute(attr.name)
+      }
+    }
+  }
+}
+
+function serializeInlineImportStyle(computedStyle                            )         {
+  if (!computedStyle) return ''
+  const entries           = []
+  for (const property of IMPORT_STYLE_PROPERTIES) {
+    const value = computedStyle.getPropertyValue(property).trim()
+    if (!value) continue
+    if (property === 'background-color' && !normalizeColor(value)) continue
+    if (property === 'border-top' || property === 'border-right' || property === 'border-bottom' || property === 'border-left') {
+      if (value === '0px none rgb(0, 0, 0)' || value === 'none') continue
+    }
+    entries.push(`${property}: ${value}`)
+  }
+  return entries.join('; ')
+}
+
+function buildSanitizedContentNode(node             )              {
+  const clone = node.cloneNode(true)               
+  const sourceNodes = [node, ...Array.from(node.querySelectorAll             ('*'))]
+  const cloneNodes = [clone, ...Array.from(clone.querySelectorAll             ('*'))]
+  const count = Math.min(sourceNodes.length, cloneNodes.length)
+
+  for (let index = 0; index < count; index += 1) {
+    const inlineStyle = serializeInlineImportStyle(readComputedStyleSafe(sourceNodes[index]))
+    if (inlineStyle) cloneNodes[index].setAttribute('style', inlineStyle)
+  }
+
+  sanitizeNodeInPlace(clone)
+  return clone
+}
+
+function inferType(node             )                     {
+  const className = (node.className || '').toString().toLowerCase()
+  const text = (node.textContent || '').trim().toLowerCase()
+  const tag = node.tagName.toLowerCase()
+  const alt = (node.getAttribute('alt') || '').toLowerCase()
+
+  if (tag === 'svg') return 'logo'
+  if (tag === 'img' && (className.includes('logo') || alt.includes('logo'))) return 'logo'
+  if (className.includes('subheading') || className.includes('subtitle')) return 'subheading'
+  if (tag === 'h1' || tag === 'h2' || className.includes('heading') || className.includes('title')) return 'heading'
+  if (tag === 'h3' || tag === 'h4') return 'subheading'
+  if (className.includes('tagline') || className.includes('tag-line')) return 'tag-line'
+  if (className.includes('stat') || className.includes('metric')) return 'stat'
+  if (className.includes('card') || className.includes('artifact') || /\bart\b/.test(className)) return 'card'
+  if (className.includes('row')) return 'row'
+  if (className.includes('panel') || className.includes('container')) return 'panel'
+  if (text.length <= 32 && /\d/.test(text) && className.includes('kpi')) return 'stat'
+  return 'text'
 }
 
 function getCanvasRoot(doc          )                     {
@@ -1549,320 +1708,6 @@ function getNodeLabel(node             )         {
   return node.tagName.toLowerCase()
 }
 
-function asCanonicalDimension(value                    , fallback = 0)         {
-  if (value === undefined || !Number.isFinite(value)) return fallback
-  const rounded = Number(value.toFixed(3))
-  const nearestInteger = Math.round(rounded)
-  if (Math.abs(rounded - nearestInteger) <= 0.5) return nearestInteger
-  return rounded
-}
-
-function asCanonicalDimensionOptional(value                    )                     {
-  if (value === undefined) return undefined
-  if (!Number.isFinite(value)) return undefined
-  const rounded = Number(value.toFixed(3))
-  const nearestInteger = Math.round(rounded)
-  if (Math.abs(rounded - nearestInteger) <= 0.5) return nearestInteger
-  return rounded
-}
-
-function getComponentContentBounds(components                  )                       {
-  if (components.length === 0) return null
-
-  let minX = Number.POSITIVE_INFINITY
-  let minY = Number.POSITIVE_INFINITY
-  let maxRight = 0
-  let maxBottom = 0
-
-  for (const component of components) {
-    const width = Number.isFinite(component.width) ? component.width : 0
-    const height = Number.isFinite(component.height || 0) ? (component.height || 0) : 0
-    minX = Math.min(minX, component.x)
-    minY = Math.min(minY, component.y)
-    maxRight = Math.max(maxRight, component.x + Math.max(0, width))
-    maxBottom = Math.max(maxBottom, component.y + Math.max(0, height))
-  }
-
-  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null
-  const width = Math.max(1, maxRight - minX)
-  const height = Math.max(1, maxBottom - minY)
-  return { minX, minY, maxRight, maxBottom, width, height }
-}
-
-function normalizeCanvasToContentBounds(
-  components                  ,
-  canvas                                                        ,
-  warnings          ,
-)                                                                                                   {
-  const bounds = getComponentContentBounds(components)
-  if (!bounds) return { components, canvas }
-
-  const oversizedCanvas = canvas.width > 4096 || canvas.height > 4096
-  if (!oversizedCanvas) return { components, canvas }
-
-  const shifted = components.map((component) => ({
-    ...component,
-    x: asCanonicalDimension(component.x - bounds.minX),
-    y: asCanonicalDimension(component.y - bounds.minY),
-  }))
-  const normalizedCanvas = {
-    ...canvas,
-    width: asCanonicalDimension(Math.max(1, bounds.width)),
-    height: asCanonicalDimension(Math.max(1, bounds.height)),
-  }
-  warnings.push(
-    `Normalized oversized canvas to content bounds ${normalizedCanvas.width}x${normalizedCanvas.height} for import usability.`,
-  )
-  return { components: shifted, canvas: normalizedCanvas }
-}
-
-function measureNodeRect(node             , root             )                   {
-  if (typeof node.getBoundingClientRect !== 'function' || typeof root.getBoundingClientRect !== 'function') {
-    return {}
-  }
-
-  const rect = node.getBoundingClientRect()
-  const rootRect = root.getBoundingClientRect()
-  if (!Number.isFinite(rect.left) || !Number.isFinite(rootRect.left)) return {}
-
-  return {
-    x: rect.left - rootRect.left,
-    y: rect.top - rootRect.top,
-    width: Number.isFinite(rect.width) && rect.width > 0 ? rect.width : undefined,
-    height: Number.isFinite(rect.height) && rect.height > 0 ? rect.height : undefined,
-  }
-}
-
-function measureContentBounds(
-  nodes               ,
-  snapshot                ,
-  root             ,
-)                                      {
-  let maxRight = 0
-  let maxBottom = 0
-
-  for (const node of nodes) {
-    const nodeId = node.getAttribute('data-import-node-id') || ''
-    const renderNode = snapshot.nodesById.get(nodeId) || node
-    const renderRoot = snapshot.root || root
-    const measured = measureNodeRect(renderNode, renderRoot)
-    if (measured.width === undefined || measured.height === undefined) continue
-    const x = measured.x || 0
-    const y = measured.y || 0
-    maxRight = Math.max(maxRight, x + measured.width)
-    maxBottom = Math.max(maxBottom, y + measured.height)
-  }
-
-  return {
-    width: maxRight > 0 ? maxRight : undefined,
-    height: maxBottom > 0 ? maxBottom : undefined,
-  }
-}
-
-function clampAutoImportCanvasAxis(axisValue        , label                    , warnings          )         {
-  const defaultAxis = label === 'width' ? DEFAULT_CANVAS_WIDTH : DEFAULT_CANVAS_HEIGHT
-  const maxAxis = Math.round(defaultAxis * IMPORT_AUTO_CANVAS_SCALE_MAX)
-  if (axisValue <= maxAxis) return axisValue
-
-  warnings.push(
-    `Source ${label} ${axisValue}px exceeds auto-import safety cap ${maxAxis}px; clamped to avoid compressed output.`,
-  )
-  return maxAxis
-}
-
-function emptyRenderSnapshot()                 {
-  return { root: null, nodesById: new Map(), dispose: () => {} }
-}
-
-// An invisible, script-less iframe that lays the slide out at 1920x1080 for measuring.
-function createHiddenRenderFrame()                    {
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('aria-hidden', 'true')
-  iframe.tabIndex = -1
-  iframe.style.position = 'fixed'
-  iframe.style.left = '-100000px'
-  iframe.style.top = '-100000px'
-  iframe.style.width = '1920px'
-  iframe.style.height = '1080px'
-  iframe.style.opacity = '0'
-  iframe.style.pointerEvents = 'none'
-  iframe.style.zIndex = '-1'
-  iframe.style.overflow = 'hidden'
-  iframe.setAttribute('sandbox', 'allow-same-origin')
-  document.body.appendChild(iframe)
-  return iframe
-}
-
-// Copy the parsed slide into the sandbox body and return the clone of its root.
-function cloneSlideIntoSandbox(sandboxBody             , doc          , root             )              {
-  let rootClone                     = null
-  const sourceBody = doc.body
-  if (sourceBody) {
-    const bodyClone = sourceBody.cloneNode(true)               
-    for (const attr of Array.from(sourceBody.attributes)) {
-      sandboxBody.setAttribute(attr.name, attr.value)
-    }
-    const sourceRootIsBody = root === sourceBody
-    sandboxBody.replaceChildren(...Array.from(bodyClone.childNodes))
-
-    if (sourceRootIsBody) {
-      sandboxBody.setAttribute(IMPORT_ROOT_MARKER_ATTR, IMPORT_ROOT_MARKER_VALUE)
-      rootClone = sandboxBody
-    } else {
-      rootClone = sandboxBody.querySelector             (`[${IMPORT_ROOT_MARKER_ATTR}="${IMPORT_ROOT_MARKER_VALUE}"]`)
-    }
-  }
-
-  if (!rootClone) {
-    rootClone = root.cloneNode(true)               
-    sandboxBody.replaceChildren(rootClone)
-  }
-  return rootClone
-}
-
-function indexNodesById(sandboxDoc          )                           {
-  const nodesById = new Map                     ()
-  for (const node of Array.from(sandboxDoc.querySelectorAll             ('[data-import-node-id]'))) {
-    const id = node.getAttribute('data-import-node-id')
-    if (!id) continue
-    nodesById.set(id, node)
-  }
-  return nodesById
-}
-
-async function buildRenderSnapshot(doc          , root             , styleChunks                     )                          {
-  if (typeof document === 'undefined' || !document.body) return emptyRenderSnapshot()
-
-  const iframe = createHiddenRenderFrame()
-  const sandboxDoc = iframe.contentDocument
-  if (!sandboxDoc) {
-    iframe.remove()
-    return emptyRenderSnapshot()
-  }
-
-  sandboxDoc.open()
-  sandboxDoc.write('<!doctype html><html><head></head><body></body></html>')
-  sandboxDoc.close()
-
-  const sandboxBody = sandboxDoc.body
-  if (!sandboxBody) {
-    iframe.remove()
-    return emptyRenderSnapshot()
-  }
-
-  sandboxBody.style.margin = '0'
-  sandboxBody.style.padding = '0'
-  sandboxBody.style.overflow = 'hidden'
-
-  if (styleChunks.length > 0 && sandboxDoc.head) {
-    const styleEl = sandboxDoc.createElement('style')
-    styleEl.textContent = styleChunks
-      .map(({ cssText }) => cssText)
-      .filter(Boolean)
-      .join('\n')
-    sandboxDoc.head.appendChild(styleEl)
-  }
-
-  const rootClone = cloneSlideIntoSandbox(sandboxBody, doc, root)
-  await settleRenderSnapshot(sandboxDoc)
-
-  return {
-    root: rootClone,
-    nodesById: indexNodesById(sandboxDoc),
-    dispose: () => {
-      iframe.remove()
-    },
-  }
-}
-
-function hasOwnTextNode(node             )          {
-  return Array.from(node.childNodes).some((child) => child.nodeType === 3 && Boolean(child.textContent?.trim()))
-}
-
-function extractPseudoComponents(
-  descriptors                         ,
-  renderSnapshot                ,
-  root             ,
-  renderRoot             ,
-  warnings          ,
-)                                {
-  const pseudoByHost = new Map                          ()
-  const mergedStyles = new Map                                                                                         ()
-
-  for (const descriptor of descriptors) {
-    const hostPseudoKey = descriptor.hostId + '|' + descriptor.pseudo
-    const existing = mergedStyles.get(hostPseudoKey)
-    mergedStyles.set(hostPseudoKey, {
-      pseudo: descriptor.pseudo,
-      order: descriptor.order,
-      styleMap: {
-        ...(existing?.styleMap || {}),
-        ...descriptor.styleMap,
-      },
-    })
-  }
-
-  for (const [hostPseudoKey, { pseudo, order, styleMap }] of mergedStyles.entries()) {
-    const [hostId] = hostPseudoKey.split('|')
-    if (hostId === IMPORT_ROOT_NODE_ID) {
-      warnings.push('Skipped root pseudo-element decorative overlay during import.')
-      continue
-    }
-    const hostNode = root.querySelector             (`[data-import-node-id="${hostId}"]`)
-    if (!hostNode) continue
-
-    const renderNode = renderSnapshot.nodesById.get(hostId) || hostNode
-    const measuredHost = measureNodeRect(renderNode, renderRoot)
-    const hostStyleMap = parseRuleDeclarations(hostNode.getAttribute('style') || '')
-    const hostComputedStyle = readComputedStyleSafe(renderNode)
-    const hostLabel = getNodeLabel(hostNode)
-
-    const pseudoLabel = hostLabel + '::' + pseudo
-    const pseudoContent = buildPseudoContent(styleMap, pseudoLabel, warnings)
-    const pseudoWidth = parseStylePx(styleMap, 'width', pseudoLabel, warnings)
-    const pseudoHeight = parseStylePx(styleMap, 'height', pseudoLabel, warnings)
-    if (!shouldImportPseudoLayer(styleMap, pseudoWidth, pseudoHeight)) continue
-
-    const hostX = typeof measuredHost.x === 'number' && Number.isFinite(measuredHost.x) ? measuredHost.x : 0
-    const hostY = typeof measuredHost.y === 'number' && Number.isFinite(measuredHost.y) ? measuredHost.y : 0
-    const pseudoX = hostX + computePseudoOffset(styleMap, 'x', measuredHost, pseudoLabel, warnings)
-    const pseudoY = hostY + computePseudoOffset(styleMap, 'y', measuredHost, pseudoLabel, warnings)
-
-    const mergedStyleMap = {
-      ...hostStyleMap,
-      ...styleMap,
-    }
-    const extractedStyle = extractStyle(mergedStyleMap, hostComputedStyle, warnings, pseudoLabel)
-
-    const pseudoComponent                 = {
-      id: `import-${hostId}-${pseudo}-${order}`,
-      type: 'panel',
-      sourceLabel: pseudoLabel,
-      x: asCanonicalDimension(pseudoX),
-      y: asCanonicalDimension(pseudoY),
-      width: asCanonicalDimension(pseudoWidth ?? 16),
-      height: asCanonicalDimensionOptional(pseudoHeight),
-      content: pseudoContent || '\u00a0',
-      style: extractedStyle,
-      locked: false,
-      visible: true,
-    }
-    pseudoByHost.set(hostId, [...(pseudoByHost.get(hostId) || []), pseudoComponent])
-  }
-
-  for (const [, components] of pseudoByHost) {
-    components.sort((a, b) => {
-      const aBefore = (a.sourceLabel || '').includes('::before')
-      const bBefore = (b.sourceLabel || '').includes('::before')
-      if (aBefore && !bBefore) return -1
-      if (!aBefore && bBefore) return 1
-      return 0
-    })
-  }
-
-  return pseudoByHost
-}
-
 function shouldImportFlowNode(
   node             ,
   computedStyle                            ,
@@ -1959,6 +1804,217 @@ function collectNestedTextLeaves(
 // (3) keep every plain-text run as an editable text box on top. Simple text-on-solid
 // slides skip this entirely and use the native path.
 
+// ===== html-import-pseudo.ts =====
+function parsePseudoLayerDescriptors(styleText        , root             )                          {
+  const descriptors                          = []
+  const ruleRegex = /([^{}]+)\{([^{}]*)\}/g
+  let match                        
+  let order = 0
+
+  while ((match = ruleRegex.exec(styleText)) !== null) {
+    const selectorList = match[1]?.trim() || ''
+    const declarationText = match[2] || ''
+    const styleMap = parseRuleDeclarations(declarationText)
+    if (Object.keys(styleMap).length === 0) {
+      order += 1
+      continue
+    }
+
+    const selectors = selectorList.split(',').map((selector) => selector.trim()).filter(Boolean)
+    for (const selector of selectors) {
+      const pseudoMatch = selector.match(/^(.+?)(::before|::after|:before|:after)\s*$/i)
+      if (!pseudoMatch) continue
+
+      const pseudo = pseudoMatch[2]?.toLowerCase().includes('before') ? 'before' : 'after'
+      const hostSelector = pseudoMatch[1]?.trim()
+      if (!hostSelector) continue
+
+      let hostNodes                = []
+      try {
+        hostNodes = Array.from(root.querySelectorAll(hostSelector)                           )
+        if (root.matches(hostSelector)) {
+          hostNodes = [root, ...hostNodes]
+        }
+      } catch {
+        continue
+      }
+
+      for (const hostNode of Array.from(hostNodes)) {
+        const hostId = hostNode.getAttribute('data-import-node-id')
+        if (!hostId) continue
+        descriptors.push({
+          hostId,
+          pseudo,
+          hostLabel: getNodeLabel(hostNode),
+          styleMap,
+          order,
+        })
+      }
+    }
+
+    order += 1
+  }
+
+  return descriptors
+}
+
+function buildPseudoContent(styleMap                        , pseudoNodeLabel        , warnings          )         {
+  const rawContent = styleMap.content || ''
+  if (!rawContent || rawContent.toLowerCase() === 'none') return ''
+
+  const isUrlImage = rawContent.startsWith('url(') && rawContent.endsWith(')')
+  if (isUrlImage) {
+    const parsedUrl = getCssImportUrl(rawContent)
+    if (!parsedUrl) {
+      warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content URL "' + rawContent + '" could not be parsed; ignored.')
+      return ''
+    }
+    warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content URL converted to image fallback.')
+    return `<img alt="${pseudoNodeLabel}" src="${parsedUrl}" />`
+  }
+
+  if (/^(attr|counters?)\(/i.test(rawContent)) {
+    warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content "' + rawContent + '" is not supported; ignored.')
+    return ''
+  }
+
+  return escapeHtmlText(decodeCssEscapes(stripWrappingQuotes(rawContent)))
+}
+
+// "\e900" and "\201C " are CSS escapes for one character each; a backslash before any other character yields that character.
+function decodeCssEscapes(text        )         {
+  return text.replace(/\\([0-9a-fA-F]{1,6})\s?|\\([\s\S])/g, (_match, hex                    , literal                    ) => {
+    if (literal !== undefined) return literal
+    const codePoint = Number.parseInt(hex          , 16)
+    return codePoint === 0 || codePoint > 0x10ffff ? '\ufffd' : String.fromCodePoint(codePoint)
+  })
+}
+
+function computePseudoOffset(
+  styleMap                        ,
+  axis           ,
+  hostRect                  ,
+  nodeLabel        ,
+  warnings          ,
+)         {
+  const key = axis === 'x' ? 'left' : 'top'
+  const axisSize = axis === 'x' ? (hostRect.width || 0) : (hostRect.height || 0)
+  const parsed = parseStylePositionPx(styleMap, key, nodeLabel, warnings, axisSize)
+  if (typeof parsed === 'number' && Number.isFinite(parsed)) return parsed
+  return 0
+}
+
+function shouldImportPseudoLayer(styleMap                        , width                    , height                    )          {
+  if (styleMap.content && styleMap.content.toLowerCase() !== 'none') return true
+  if (parseRuleValueExists(styleMap, 'background') || parseRuleValueExists(styleMap, 'background-color') || parseRuleValueExists(styleMap, 'background-image')) return true
+  if (parseRuleValueExists(styleMap, 'border') || parseRuleValueExists(styleMap, 'border-color') || parseRuleValueExists(styleMap, 'box-shadow')) return true
+  return typeof width === 'number' || typeof height === 'number'
+}
+
+function extractPseudoComponents(
+  descriptors                         ,
+  renderSnapshot                ,
+  root             ,
+  renderRoot             ,
+  warnings          ,
+)                                {
+  const pseudoByHost = new Map                          ()
+  const mergedStyles = new Map                                                                                         ()
+
+  for (const descriptor of descriptors) {
+    const hostPseudoKey = descriptor.hostId + '|' + descriptor.pseudo
+    const existing = mergedStyles.get(hostPseudoKey)
+    mergedStyles.set(hostPseudoKey, {
+      pseudo: descriptor.pseudo,
+      order: descriptor.order,
+      styleMap: {
+        ...(existing?.styleMap || {}),
+        ...descriptor.styleMap,
+      },
+    })
+  }
+
+  for (const [hostPseudoKey, { pseudo, order, styleMap }] of mergedStyles.entries()) {
+    const [hostId] = hostPseudoKey.split('|')
+    if (hostId === IMPORT_ROOT_NODE_ID) {
+      warnings.push('Skipped root pseudo-element decorative overlay during import.')
+      continue
+    }
+    const hostNode = root.querySelector             (`[data-import-node-id="${hostId}"]`)
+    if (!hostNode) continue
+
+    const renderNode = renderSnapshot.nodesById.get(hostId) || hostNode
+    const measuredHost = measureNodeRect(renderNode, renderRoot)
+    const hostStyleMap = parseRuleDeclarations(hostNode.getAttribute('style') || '')
+    const hostComputedStyle = readComputedStyleSafe(renderNode)
+    const hostLabel = getNodeLabel(hostNode)
+
+    const pseudoLabel = hostLabel + '::' + pseudo
+    const pseudoContent = buildPseudoContent(styleMap, pseudoLabel, warnings)
+    const pseudoWidth = parseStylePx(styleMap, 'width', pseudoLabel, warnings)
+    const pseudoHeight = parseStylePx(styleMap, 'height', pseudoLabel, warnings)
+    if (!shouldImportPseudoLayer(styleMap, pseudoWidth, pseudoHeight)) continue
+
+    const hostX = typeof measuredHost.x === 'number' && Number.isFinite(measuredHost.x) ? measuredHost.x : 0
+    const hostY = typeof measuredHost.y === 'number' && Number.isFinite(measuredHost.y) ? measuredHost.y : 0
+    const pseudoX = hostX + computePseudoOffset(styleMap, 'x', measuredHost, pseudoLabel, warnings)
+    const pseudoY = hostY + computePseudoOffset(styleMap, 'y', measuredHost, pseudoLabel, warnings)
+
+    const mergedStyleMap = {
+      ...hostStyleMap,
+      ...styleMap,
+    }
+    const extractedStyle = extractStyle(mergedStyleMap, hostComputedStyle, warnings, pseudoLabel)
+
+    const pseudoComponent                 = {
+      id: `import-${hostId}-${pseudo}-${order}`,
+      type: 'panel',
+      sourceLabel: pseudoLabel,
+      x: asCanonicalDimension(pseudoX),
+      y: asCanonicalDimension(pseudoY),
+      width: asCanonicalDimension(pseudoWidth ?? 16),
+      height: asCanonicalDimensionOptional(pseudoHeight),
+      content: pseudoContent || '\u00a0',
+      style: extractedStyle,
+      locked: false,
+      visible: true,
+    }
+    pseudoByHost.set(hostId, [...(pseudoByHost.get(hostId) || []), pseudoComponent])
+  }
+
+  for (const [, components] of pseudoByHost) {
+    components.sort((a, b) => {
+      const aBefore = (a.sourceLabel || '').includes('::before')
+      const bBefore = (b.sourceLabel || '').includes('::before')
+      if (aBefore && !bBefore) return -1
+      if (!aBefore && bBefore) return 1
+      return 0
+    })
+  }
+
+  return pseudoByHost
+}
+
+function extractPseudoLayers(
+  styleSources        ,
+  renderSnapshot                ,
+  root             ,
+  warnings          ,
+)                                {
+  const pseudoDescriptors = parsePseudoLayerDescriptors(styleSources, root)
+  const pseudoByHost = extractPseudoComponents(pseudoDescriptors, renderSnapshot, root, renderSnapshot.root || root, warnings)
+  const pseudoLayerCount = Array.from(pseudoByHost.values()).reduce((total, entries) => total + entries.length, 0)
+  if (pseudoDescriptors.length > 0 && pseudoLayerCount === 0) {
+    warnings.push('Pseudo-element selectors were detected but could not be resolved to rendered layers.')
+  } else if (pseudoLayerCount > 0) {
+    warnings.push(
+      'Extracted ' + pseudoLayerCount + ' pseudo-element layer' + (pseudoLayerCount === 1 ? '' : 's') + ' from CSS.',
+    )
+  }
+  return pseudoByHost
+}
+
+// ===== html-import-raster.ts =====
 const XHTML_NS = 'http://www.w3.org/1999/xhtml'
 
 function loadImageFromUrl(url        )                                   {
@@ -2018,13 +2074,6 @@ async function rasterizeSvgComponents(components                  , warnings    
       warnings.push('Component ' + component.id + ' SVG image could not be converted to a picture and will be skipped in PPTX.')
     }
   }
-}
-
-function isVisibleEl(el             , win        )          {
-  const cs = win.getComputedStyle(el)
-  if (cs.display === 'none' || cs.visibility === 'hidden') return false
-  const op = parseFloat(cs.opacity || '1')
-  return !(Number.isFinite(op) && op <= 0.01)
 }
 
 function svgDataUrlFromSerializedXhtml(inner        , w        , h        )         {
@@ -2111,12 +2160,6 @@ async function rasterizeArtLayer(
   const inner = new XMLSerializer().serializeToString(wrap)
   return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)
 }
-
-                            
-                       
-                                
-                               
- 
 
 // Rasterize only genuinely rich designed graphics: gradient fills, gradient text, or two or
 // more decorative boxes. Returns null for a simple text-on-solid slide, which keeps native shapes.
@@ -2295,6 +2338,117 @@ function escapeHtmlText(text        )         {
     .replace(/>/g, '&gt;')
 }
 
+// ===== html-import-nodes.ts =====
+// In absolute mode, split text nested inside a positioned container into its own
+// text-box layers (each keeps its font/size/color) instead of collapsing the whole
+// container into one uniform text blob. The container is then imported as a
+// background/shape layer with the extracted text removed.
+function planNestedTextSplit(
+  selection               ,
+  allNodes               ,
+  renderSnapshot                ,
+  root             ,
+  warnings          ,
+)                                                                                     {
+  const { absoluteNodes, nodes } = selection
+  const strippedIdsByContainer = new Map                     ()
+  let nodesForBuild = nodes
+  const absoluteIdSet = new Set(absoluteNodes.map((entry) => entry.getAttribute('data-import-node-id') || ''))
+  const extraNodes                = []
+  const seenExtra = new Set        ()
+  for (const container of absoluteNodes) {
+    const containerId = container.getAttribute('data-import-node-id') || ''
+    const leaves = collectNestedTextLeaves(container, absoluteIdSet, renderSnapshot, root)
+    const stripSet = new Set        ()
+    for (const leaf of leaves) {
+      const leafId = leaf.getAttribute('data-import-node-id') || ''
+      if (!leafId || seenExtra.has(leafId)) continue
+      seenExtra.add(leafId)
+      stripSet.add(leafId)
+      extraNodes.push(leaf)
+    }
+    // Strip nested positioned descendants: each becomes its own component, so
+    // leaving it inside this container's content would render its text twice.
+    for (const descendant of Array.from(container.querySelectorAll             ('[data-import-node-id]'))) {
+      const descId = descendant.getAttribute('data-import-node-id') || ''
+      if (descId && descId !== containerId && absoluteIdSet.has(descId)) stripSet.add(descId)
+    }
+    if (stripSet.size > 0) strippedIdsByContainer.set(containerId, stripSet)
+  }
+  if (extraNodes.length > 0) {
+    const orderIndex = new Map(allNodes.map((entry, i) => [entry, i]         ))
+    nodesForBuild = [...absoluteNodes, ...extraNodes].sort(
+      (a, b) => (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0),
+    )
+    warnings.push(
+      'Split ' + extraNodes.length + ' nested text element' + (extraNodes.length === 1 ? '' : 's') + ' into separate editable text layers.',
+    )
+  }
+  return { nodesForBuild, strippedIdsByContainer }
+}
+
+// Turn one imported node into its component, preceded by any pseudo-element layers it hosts.
+function buildNodeComponents(node             , index        , ctx                  )                   {
+  const { renderSnapshot, root, canvas, importMode, warnings } = ctx
+  const styleMap = parseRuleDeclarations(node.getAttribute('style') || '')
+  const nodeLabel = getNodeLabel(node)
+  const nodeId = node.getAttribute('data-import-node-id') || ''
+  const renderNode = renderSnapshot.nodesById.get(nodeId) || node
+  const renderRoot = renderSnapshot.root || root
+  const computedStyle = readComputedStyleSafe(renderNode)
+  const measured = measureNodeRect(renderNode, renderRoot)
+  const sanitizedNode = buildSanitizedContentNode(renderNode)
+  const stripSet = ctx.strippedIdsByContainer.get(nodeId)
+  if (stripSet) {
+    for (const stripId of stripSet) {
+      sanitizedNode.querySelectorAll('[data-import-node-id="' + stripId + '"]').forEach((el) => el.remove())
+    }
+  }
+  const isSvg = node.tagName.toLowerCase() === 'svg'
+  const content = isSvg
+    ? resolveSvgImageFallback(sanitizedNode, nodeLabel, warnings)
+    : stripSet
+      ? sanitizedNode.innerHTML.trim()
+      : (sanitizedNode.innerHTML.trim() || sanitizedNode.outerHTML.trim())
+
+  const position = resolveNodePosition(renderNode, renderRoot, styleMap, computedStyle, measured, canvas, nodeLabel, warnings)
+  const baseWidth = measured.width
+    ?? parseStylePx(styleMap, 'width', nodeLabel, warnings)
+    ?? parseAttrPx(node.getAttribute('width'), 'width', nodeLabel, warnings)
+    ?? 320
+  const baseHeight = measured.height
+    ?? parseStylePx(styleMap, 'height', nodeLabel, warnings)
+    ?? parseAttrPx(node.getAttribute('height'), 'height', nodeLabel, warnings)
+
+  const extractedStyle = extractStyle(styleMap, computedStyle, warnings, nodeLabel)
+  const fallbackLocked = importMode === 'fallback' || importMode === 'root-fallback'
+  const components                   = []
+  const pseudoForHost = ctx.pseudoByHost.get(nodeId)
+  if (pseudoForHost) {
+    components.push(
+      ...pseudoForHost.map((entry, pseudoIndex) => ({
+        ...entry,
+        id: `import-${String(index + 1).padStart(3, '0')}-${pseudoIndex + 1}-${entry.sourceLabel?.replace(/[^a-z0-9-]/gi, '-') || 'pseudo'}`,
+      })),
+    )
+  }
+  components.push({
+    id: 'import-' + String(index + 1).padStart(3, '0'),
+    type: inferType(node),
+    sourceLabel: fallbackLocked ? `${nodeLabel} (fallback)` : nodeLabel,
+    x: asCanonicalDimension(position.x),
+    y: asCanonicalDimension(position.y),
+    width: asCanonicalDimension(baseWidth),
+    height: asCanonicalDimensionOptional(baseHeight),
+    content,
+    style: extractedStyle,
+    locked: fallbackLocked,
+    visible: true,
+  })
+  return components
+}
+
+// ===== html-import.ts =====
 function finishImport(canvas             , components                  , warnings          )                    {
   const uniqueWarnings = Array.from(new Set(warnings))
   return {
@@ -2357,16 +2511,6 @@ function warnAboutUnsupportedContent(root             , styleSourceText        ,
   }
 }
 
-                          
-                                   
-                                    
-                                   
-                                    
-                                    
-                                   
-                                               
- 
-
 function readDeclaredCanvas(root             , renderSnapshot                , warnings          )                 {
   const rootStyle = parseRuleDeclarations(root.getAttribute('style') || '')
   const measuredRootRect = renderSnapshot.root ? measureNodeRect(renderSnapshot.root, renderSnapshot.root) : {}
@@ -2408,15 +2552,6 @@ function resolveCanvasBackground(
   )
 }
 
-                                                                    
-
-                         
-                              
-                          
-                      
-                        
- 
-
 // Prefer absolutely positioned elements, then flow-layout elements, then top-level children, then the root.
 function selectImportNodes(allNodes               , renderSnapshot                , root             )                {
   const renderRoot = renderSnapshot.root || root
@@ -2431,25 +2566,6 @@ function selectImportNodes(allNodes               , renderSnapshot              
   if (flowNodes.length > 0) return { absoluteNodes, flowNodes, nodes: flowNodes, importMode: 'flow' }
   if (fallbackNodes.length > 0) return { absoluteNodes, flowNodes, nodes: fallbackNodes, importMode: 'fallback' }
   return { absoluteNodes, flowNodes, nodes: [root], importMode: 'root-fallback' }
-}
-
-function extractPseudoLayers(
-  styleSources        ,
-  renderSnapshot                ,
-  root             ,
-  warnings          ,
-)                                {
-  const pseudoDescriptors = parsePseudoLayerDescriptors(styleSources, root)
-  const pseudoByHost = extractPseudoComponents(pseudoDescriptors, renderSnapshot, root, renderSnapshot.root || root, warnings)
-  const pseudoLayerCount = Array.from(pseudoByHost.values()).reduce((total, entries) => total + entries.length, 0)
-  if (pseudoDescriptors.length > 0 && pseudoLayerCount === 0) {
-    warnings.push('Pseudo-element selectors were detected but could not be resolved to rendered layers.')
-  } else if (pseudoLayerCount > 0) {
-    warnings.push(
-      'Extracted ' + pseudoLayerCount + ' pseudo-element layer' + (pseudoLayerCount === 1 ? '' : 's') + ' from CSS.',
-    )
-  }
-  return pseudoByHost
 }
 
 function resolveSourceCanvasSize(
@@ -2505,185 +2621,6 @@ function warnAboutImportMode(selection               , size                     
   if (importMode === 'root-fallback') {
     warnings.push('No importable child layers were detected; imported the slide root as a locked fallback layer.')
   }
-}
-
-// In absolute mode, split text nested inside a positioned container into its own
-// text-box layers (each keeps its font/size/color) instead of collapsing the whole
-// container into one uniform text blob. The container is then imported as a
-// background/shape layer with the extracted text removed.
-function planNestedTextSplit(
-  selection               ,
-  allNodes               ,
-  renderSnapshot                ,
-  root             ,
-  warnings          ,
-)                                                                                     {
-  const { absoluteNodes, nodes } = selection
-  const strippedIdsByContainer = new Map                     ()
-  let nodesForBuild = nodes
-  const absoluteIdSet = new Set(absoluteNodes.map((entry) => entry.getAttribute('data-import-node-id') || ''))
-  const extraNodes                = []
-  const seenExtra = new Set        ()
-  for (const container of absoluteNodes) {
-    const containerId = container.getAttribute('data-import-node-id') || ''
-    const leaves = collectNestedTextLeaves(container, absoluteIdSet, renderSnapshot, root)
-    const stripSet = new Set        ()
-    for (const leaf of leaves) {
-      const leafId = leaf.getAttribute('data-import-node-id') || ''
-      if (!leafId || seenExtra.has(leafId)) continue
-      seenExtra.add(leafId)
-      stripSet.add(leafId)
-      extraNodes.push(leaf)
-    }
-    // Strip nested positioned descendants: each becomes its own component, so
-    // leaving it inside this container's content would render its text twice.
-    for (const descendant of Array.from(container.querySelectorAll             ('[data-import-node-id]'))) {
-      const descId = descendant.getAttribute('data-import-node-id') || ''
-      if (descId && descId !== containerId && absoluteIdSet.has(descId)) stripSet.add(descId)
-    }
-    if (stripSet.size > 0) strippedIdsByContainer.set(containerId, stripSet)
-  }
-  if (extraNodes.length > 0) {
-    const orderIndex = new Map(allNodes.map((entry, i) => [entry, i]         ))
-    nodesForBuild = [...absoluteNodes, ...extraNodes].sort(
-      (a, b) => (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0),
-    )
-    warnings.push(
-      'Split ' + extraNodes.length + ' nested text element' + (extraNodes.length === 1 ? '' : 's') + ' into separate editable text layers.',
-    )
-  }
-  return { nodesForBuild, strippedIdsByContainer }
-}
-
-// Pick the x and y of a node from the first source that has one: its measured box
-// (when nested), its own left/top, its margins, computed style, then the measured box.
-function resolveNodePosition(
-  renderNode             ,
-  renderRoot             ,
-  styleMap                        ,
-  computedStyle                            ,
-  measured                  ,
-  canvas                                   ,
-  nodeLabel        ,
-  warnings          ,
-)                           {
-  const explicitLeft = parseStylePositionPx(styleMap, 'left', nodeLabel, warnings, canvas.width)
-  const explicitTop = parseStylePositionPx(styleMap, 'top', nodeLabel, warnings, canvas.height)
-  const explicitMarginLeft = parseStyleOffsetPx(styleMap, 'margin-left', nodeLabel, warnings, canvas.width)
-  const explicitMarginTop = parseStyleOffsetPx(styleMap, 'margin-top', nodeLabel, warnings, canvas.height)
-  const computedLeft = parseComputedPositionPx(computedStyle?.left, 'left', nodeLabel, warnings, canvas.width)
-  const computedTop = parseComputedPositionPx(computedStyle?.top, 'top', nodeLabel, warnings, canvas.height)
-  const computedMarginLeft = parseStyleOffsetPx({ 'margin-left': computedStyle?.marginLeft || '' }, 'margin-left', nodeLabel, warnings, canvas.width)
-  const computedMarginTop = parseStyleOffsetPx({ 'margin-top': computedStyle?.marginTop || '' }, 'margin-top', nodeLabel, warnings, canvas.height)
-  const transformOffsets = parseTransformOffsets(styleMap.transform, nodeLabel, warnings)
-  const layoutX = Number.isFinite(renderNode.offsetLeft) ? renderNode.offsetLeft : undefined
-  const layoutY = Number.isFinite(renderNode.offsetTop) ? renderNode.offsetTop : undefined
-  const measuredX = typeof measured.x === 'number' && Number.isFinite(measured.x) ? measured.x : undefined
-  const measuredY = typeof measured.y === 'number' && Number.isFinite(measured.y) ? measured.y : undefined
-  const measuredOrLayoutX = measuredX !== undefined
-    ? ((measuredX === 0 && layoutX !== undefined && layoutX > 0) ? layoutX : measuredX)
-    : layoutX
-  const measuredOrLayoutY = measuredY !== undefined
-    ? ((measuredY === 0 && layoutY !== undefined && layoutY > 0) ? layoutY : measuredY)
-    : layoutY
-  const hasNestedRenderParent = Boolean(
-    renderRoot &&
-    renderNode.parentElement &&
-    renderNode.parentElement !== renderRoot &&
-    renderRoot.contains(renderNode.parentElement),
-  )
-  const preferredMeasuredX = hasNestedRenderParent ? measuredOrLayoutX : undefined
-  const preferredMeasuredY = hasNestedRenderParent ? measuredOrLayoutY : undefined
-  const baseX = preferredMeasuredX ?? explicitLeft ?? explicitMarginLeft ?? computedLeft ?? computedMarginLeft ?? measuredOrLayoutX ?? 0
-  const baseY = preferredMeasuredY ?? explicitTop ?? explicitMarginTop ?? computedTop ?? computedMarginTop ?? measuredOrLayoutY ?? 0
-  const baseXUsesMeasuredRect = preferredMeasuredX !== undefined || (
-    explicitLeft === undefined &&
-    explicitMarginLeft === undefined &&
-    computedLeft === undefined &&
-    computedMarginLeft === undefined &&
-    measuredOrLayoutX !== undefined
-  )
-  const baseYUsesMeasuredRect = preferredMeasuredY !== undefined || (
-    explicitTop === undefined &&
-    explicitMarginTop === undefined &&
-    computedTop === undefined &&
-    computedMarginTop === undefined &&
-    measuredOrLayoutY !== undefined
-  )
-  const transformX = baseXUsesMeasuredRect && measuredX !== undefined ? 0 : transformOffsets.x
-  const transformY = baseYUsesMeasuredRect && measuredY !== undefined ? 0 : transformOffsets.y
-  return { x: baseX + transformX, y: baseY + transformY }
-}
-
-                            
-                                
-                   
-                                           
-                        
-                                                  
-                                             
-                    
- 
-
-// Turn one imported node into its component, preceded by any pseudo-element layers it hosts.
-function buildNodeComponents(node             , index        , ctx                  )                   {
-  const { renderSnapshot, root, canvas, importMode, warnings } = ctx
-  const styleMap = parseRuleDeclarations(node.getAttribute('style') || '')
-  const nodeLabel = getNodeLabel(node)
-  const nodeId = node.getAttribute('data-import-node-id') || ''
-  const renderNode = renderSnapshot.nodesById.get(nodeId) || node
-  const renderRoot = renderSnapshot.root || root
-  const computedStyle = readComputedStyleSafe(renderNode)
-  const measured = measureNodeRect(renderNode, renderRoot)
-  const sanitizedNode = buildSanitizedContentNode(renderNode)
-  const stripSet = ctx.strippedIdsByContainer.get(nodeId)
-  if (stripSet) {
-    for (const stripId of stripSet) {
-      sanitizedNode.querySelectorAll('[data-import-node-id="' + stripId + '"]').forEach((el) => el.remove())
-    }
-  }
-  const isSvg = node.tagName.toLowerCase() === 'svg'
-  const content = isSvg
-    ? resolveSvgImageFallback(sanitizedNode, nodeLabel, warnings)
-    : stripSet
-      ? sanitizedNode.innerHTML.trim()
-      : (sanitizedNode.innerHTML.trim() || sanitizedNode.outerHTML.trim())
-
-  const position = resolveNodePosition(renderNode, renderRoot, styleMap, computedStyle, measured, canvas, nodeLabel, warnings)
-  const baseWidth = measured.width
-    ?? parseStylePx(styleMap, 'width', nodeLabel, warnings)
-    ?? parseAttrPx(node.getAttribute('width'), 'width', nodeLabel, warnings)
-    ?? 320
-  const baseHeight = measured.height
-    ?? parseStylePx(styleMap, 'height', nodeLabel, warnings)
-    ?? parseAttrPx(node.getAttribute('height'), 'height', nodeLabel, warnings)
-
-  const extractedStyle = extractStyle(styleMap, computedStyle, warnings, nodeLabel)
-  const fallbackLocked = importMode === 'fallback' || importMode === 'root-fallback'
-  const components                   = []
-  const pseudoForHost = ctx.pseudoByHost.get(nodeId)
-  if (pseudoForHost) {
-    components.push(
-      ...pseudoForHost.map((entry, pseudoIndex) => ({
-        ...entry,
-        id: `import-${String(index + 1).padStart(3, '0')}-${pseudoIndex + 1}-${entry.sourceLabel?.replace(/[^a-z0-9-]/gi, '-') || 'pseudo'}`,
-      })),
-    )
-  }
-  components.push({
-    id: 'import-' + String(index + 1).padStart(3, '0'),
-    type: inferType(node),
-    sourceLabel: fallbackLocked ? `${nodeLabel} (fallback)` : nodeLabel,
-    x: asCanonicalDimension(position.x),
-    y: asCanonicalDimension(position.y),
-    width: asCanonicalDimension(baseWidth),
-    height: asCanonicalDimensionOptional(baseHeight),
-    content,
-    style: extractedStyle,
-    locked: fallbackLocked,
-    visible: true,
-  })
-  return components
 }
 
 async function convertHtmlToSlideComponents(html        )                             {
@@ -2941,25 +2878,32 @@ function convertSlideComponentsToHtml(input
   return `${header}\n${rootOpen}\n${body}\n${rootClose}\n${footer}`
 }
 
-// ===== pptx-export.ts =====
+// ===== pptx-shared.ts =====
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
 const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships'
+
 const P_NS = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
 const SLIDE_WIDTH_EMU = 9_144_000
+
 const SLIDE_HEIGHT_EMU = 5_143_500
+
 // CSS reference pixel at 96dpi: 1px = 9525 EMU. Sizing the slide this way keeps the
 // geometry scale and the font scale (1px = 0.75pt) consistent BY CONSTRUCTION — a
 // 28px heading in a 1920px canvas exports as a 21pt run in a 20in slide, exactly the
 // proportion the browser rendered. (The previous pin-to-10in normalization scaled
 // geometry but not fonts, so text exported ~2x too large and overlapped.)
 const EMU_PER_PX = 9525
+
 // PowerPoint's hard ceiling is 56in per axis (51,206,400 EMU).
 const MAX_SLIDE_AXIS_EMU = 51_206_400
 
-                    
+                           
            
            
                   
@@ -2975,6 +2919,49 @@ function computeSlideEmu(canvasWidth        , canvasHeight        )           {
   return { w: Math.round(w * emuPerPx), h: Math.round(h * emuPerPx), emuPerPx }
 }
 
+function escXml(value        )         {
+  return value
+    // XML 1.0 forbids control characters other than tab, line feed and carriage return.
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function toPlainText(html        )         {
+  const withLineBreaks = html
+    .replace(/<br\s*\/?>(\s*)/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+  const noTags = withLineBreaks.replace(/<[^>]*>/g, '')
+  return noTags
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, '&')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim()
+}
+
+function toEmu(px        , scale        )         {
+  return Math.max(0, Math.round(px * scale))
+}
+
+// A position may be negative when the source places an element past the slide edge.
+function toEmuOffset(px        , scale        )         {
+  return Math.round(px * scale)
+}
+
+function clamp(value        , min        , max        )         {
+  return Math.min(max, Math.max(min, value))
+}
+
+// ===== pptx-zip.ts =====
 const crcTable = (() => {
   const table = new Uint32Array(256)
   for (let i = 0; i < 256; i += 1) {
@@ -3087,50 +3074,7 @@ function buildZipStore(entries                                           )      
   return concatBytes([...locals, ...centrals, endHeader])
 }
 
-function escXml(value        )         {
-  return value
-    // XML 1.0 forbids control characters other than tab, line feed and carriage return.
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
-function toPlainText(html        )         {
-  const withLineBreaks = html
-    .replace(/<br\s*\/?>(\s*)/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-  const noTags = withLineBreaks.replace(/<[^>]*>/g, '')
-  return noTags
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&amp;/gi, '&')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim()
-}
-
-                       
-             
-               
- 
-
-                              
-                    
-             
- 
-
-                                
-                  
-                             
- 
-
+// ===== pptx-paint.ts =====
 // Standard CSS named colors -> 6-digit hex. Computed styles usually resolve to
 // rgb(), but pasted or inline-styled HTML frequently uses names like "white".
 const CSS_NAMED_COLORS                         = {
@@ -3299,19 +3243,61 @@ function buildGradientFillXml(gradient                      )         {
   return `<a:gradFill rotWithShape="1"><a:gsLst>${stops}</a:gsLst><a:lin ang="${pptAngle}" scaled="1"/></a:gradFill>`
 }
 
-function toEmu(px        , scale        )         {
-  return Math.max(0, Math.round(px * scale))
+function parseBoxShadow(value                    )                                                                    {
+  if (!value) return null
+  const candidates = splitCssArgs(value)
+  for (const candidate of candidates) {
+    if (!candidate || /\binset\b/i.test(candidate)) continue
+    const colorMatch = candidate.match(/(rgba?\([^\)]*\)|#[0-9a-fA-F]{3,8})/)
+    const color = parseCssColor(colorMatch?.[1])
+    if (!color) continue
+    const clean = candidate.replace(colorMatch?.[1] || '', ' ')
+    const lengths = clean.match(/-?\d*\.?\d+px/g) || []
+    if (lengths.length < 2) continue
+    const xToken = lengths[0]
+    const yToken = lengths[1]
+    if (!xToken || !yToken) continue
+    const x = Number.parseFloat(xToken.replace('px', ''))
+    const y = Number.parseFloat(yToken.replace('px', ''))
+    const blur = lengths[2] ? Math.max(0, Number.parseFloat(lengths[2].replace('px', ''))) : 0
+    if (![x, y, blur].every((entry) => Number.isFinite(entry))) continue
+    return { x, y, blur, color }
+  }
+  return null
 }
 
-// A position may be negative when the source places an element past the slide edge.
-function toEmuOffset(px        , scale        )         {
-  return Math.round(px * scale)
+function buildLineXml(component                )         {
+  const borderWidth = typeof component.style.borderWidth === 'number' && component.style.borderWidth > 0
+    ? component.style.borderWidth
+    : 0
+  const borderColor = parseCssColor(component.style.borderColor)
+  if (borderWidth <= 0 || !borderColor) return '<a:ln><a:noFill/></a:ln>'
+
+  const borderStyle = component.style.borderStyle || ''
+  const dash = /dotted/i.test(borderStyle)
+    ? '<a:prstDash val="sysDot"/>'
+    : /dashed/i.test(borderStyle)
+      ? '<a:prstDash val="dash"/>'
+      : ''
+  return `<a:ln w="${toEmu(borderWidth, 9_525)}"><a:solidFill><a:srgbClr val="${borderColor.hex}">${borderColor.alpha < 1 ? `<a:alpha val="${toPptAlpha(borderColor.alpha)}"/>` : ''}</a:srgbClr></a:solidFill>${dash}</a:ln>`
 }
 
-function clamp(value        , min        , max        )         {
-  return Math.min(max, Math.max(min, value))
+function buildShapeFillXml(component                , hasDefaultFill         , warnings          , warningPrefix        )         {
+  const backgroundFill = component.style.backgroundFill || component.style.backgroundColor
+  const gradient = parseLinearGradient(backgroundFill)
+  if (gradient) return buildGradientFillXml(gradient)
+
+  if (typeof backgroundFill === 'string' && /gradient\(/i.test(backgroundFill)) {
+    warnings.push(`${warningPrefix}: unsupported gradient syntax was simplified to a solid fill.`)
+  }
+
+  const solidColor = parseCssColor(backgroundFill) || parseCssColor(component.style.backgroundColor)
+  if (solidColor) return buildSolidFillXml(solidColor)
+  if (hasDefaultFill) return '<a:solidFill><a:srgbClr val="F3F4F6"/></a:solidFill>'
+  return '<a:noFill/>'
 }
 
+// ===== pptx-shapes.ts =====
 function fontSizeForComponent(component                )         {
   if (typeof component.style.fontSize === 'number' && component.style.fontSize > 0) {
     return component.style.fontSize
@@ -3369,60 +3355,6 @@ function buildTextParagraphs(
     .join('')
 }
 
-function parseBoxShadow(value                    )                                                                    {
-  if (!value) return null
-  const candidates = splitCssArgs(value)
-  for (const candidate of candidates) {
-    if (!candidate || /\binset\b/i.test(candidate)) continue
-    const colorMatch = candidate.match(/(rgba?\([^\)]*\)|#[0-9a-fA-F]{3,8})/)
-    const color = parseCssColor(colorMatch?.[1])
-    if (!color) continue
-    const clean = candidate.replace(colorMatch?.[1] || '', ' ')
-    const lengths = clean.match(/-?\d*\.?\d+px/g) || []
-    if (lengths.length < 2) continue
-    const xToken = lengths[0]
-    const yToken = lengths[1]
-    if (!xToken || !yToken) continue
-    const x = Number.parseFloat(xToken.replace('px', ''))
-    const y = Number.parseFloat(yToken.replace('px', ''))
-    const blur = lengths[2] ? Math.max(0, Number.parseFloat(lengths[2].replace('px', ''))) : 0
-    if (![x, y, blur].every((entry) => Number.isFinite(entry))) continue
-    return { x, y, blur, color }
-  }
-  return null
-}
-
-function buildLineXml(component                )         {
-  const borderWidth = typeof component.style.borderWidth === 'number' && component.style.borderWidth > 0
-    ? component.style.borderWidth
-    : 0
-  const borderColor = parseCssColor(component.style.borderColor)
-  if (borderWidth <= 0 || !borderColor) return '<a:ln><a:noFill/></a:ln>'
-
-  const borderStyle = component.style.borderStyle || ''
-  const dash = /dotted/i.test(borderStyle)
-    ? '<a:prstDash val="sysDot"/>'
-    : /dashed/i.test(borderStyle)
-      ? '<a:prstDash val="dash"/>'
-      : ''
-  return `<a:ln w="${toEmu(borderWidth, 9_525)}"><a:solidFill><a:srgbClr val="${borderColor.hex}">${borderColor.alpha < 1 ? `<a:alpha val="${toPptAlpha(borderColor.alpha)}"/>` : ''}</a:srgbClr></a:solidFill>${dash}</a:ln>`
-}
-
-function buildShapeFillXml(component                , hasDefaultFill         , warnings          , warningPrefix        )         {
-  const backgroundFill = component.style.backgroundFill || component.style.backgroundColor
-  const gradient = parseLinearGradient(backgroundFill)
-  if (gradient) return buildGradientFillXml(gradient)
-
-  if (typeof backgroundFill === 'string' && /gradient\(/i.test(backgroundFill)) {
-    warnings.push(`${warningPrefix}: unsupported gradient syntax was simplified to a solid fill.`)
-  }
-
-  const solidColor = parseCssColor(backgroundFill) || parseCssColor(component.style.backgroundColor)
-  if (solidColor) return buildSolidFillXml(solidColor)
-  if (hasDefaultFill) return '<a:solidFill><a:srgbClr val="F3F4F6"/></a:solidFill>'
-  return '<a:noFill/>'
-}
-
 function base64ToBytes(base64        )             {
   const clean = base64.replace(/\s/g, '')
   const binary = atob(clean)
@@ -3439,7 +3371,7 @@ const IMAGE_MIME_EXT                         = {
   'image/webp': 'webp',
 }
 
-                        
+                               
              
                    
  
@@ -3549,11 +3481,90 @@ function buildShapeXml(
   return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${escXml(component.type + '-' + component.id)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>${spPr}${txBody}</p:sp>`
 }
 
-                          
-             
-                 
- 
+// ===== pptx-parts.ts =====
+const IMAGE_EXT_CONTENT_TYPE                         = {
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+}
 
+function buildContentTypesXml(slideCount        , imageExtensions           = [])         {
+  const slideOverrides = Array.from({ length: slideCount }, (_, index) =>
+    `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
+  ).join('')
+
+  const imageDefaults = Array.from(new Set(imageExtensions))
+    .map((ext) => `<Default Extension="${ext}" ContentType="${IMAGE_EXT_CONTENT_TYPE[ext] || 'application/octet-stream'}"/>`)
+    .join('')
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>${slideOverrides}</Types>`
+}
+
+function buildPresentationXml(slideCount        , slideEmu          )         {
+  const slideIds = Array.from({ length: slideCount }, (_, index) =>
+    `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`,
+  ).join('')
+
+  // Emit the type hint only for the exact 16:9 ratio; for any other size cx/cy are
+  // authoritative and a mismatched type hint would confuse PowerPoint.
+  const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
+  const sizeType = isScreen16x9 ? ' type="screen16x9"' : ''
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:presentation xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="${slideEmu.w}" cy="${slideEmu.h}"${sizeType}/><p:notesSz cx="6858000" cy="9144000"/><p:defaultTextStyle/></p:presentation>`
+}
+
+function buildPresentationRelsXml(slideCount        )         {
+  const slideRels = Array.from({ length: slideCount }, (_, index) =>
+    `<Relationship Id="rId${index + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`,
+  ).join('')
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>${slideRels}</Relationships>`
+}
+
+function buildRootRelsXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`
+}
+
+function buildSlideMasterXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sldMaster xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:cSld name="Master"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>`
+}
+
+function buildSlideMasterRelsXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/></Relationships>`
+}
+
+function buildSlideLayoutXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sldLayout xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}" type="blank" preserve="1"><p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`
+}
+
+function buildSlideLayoutRelsXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>`
+}
+
+function buildThemeXml()         {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<a:theme xmlns:a="${A_NS}" name="Oliver Theme"><a:themeElements><a:clrScheme name="Oliver"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F2937"/></a:dk2><a:lt2><a:srgbClr val="F9FAFB"/></a:lt2><a:accent1><a:srgbClr val="EC4899"/></a:accent1><a:accent2><a:srgbClr val="3B82F6"/></a:accent2><a:accent3><a:srgbClr val="10B981"/></a:accent3><a:accent4><a:srgbClr val="F59E0B"/></a:accent4><a:accent5><a:srgbClr val="8B5CF6"/></a:accent5><a:accent6><a:srgbClr val="EF4444"/></a:accent6><a:hlink><a:srgbClr val="2563EB"/></a:hlink><a:folHlink><a:srgbClr val="7C3AED"/></a:folHlink></a:clrScheme><a:fontScheme name="Oliver"><a:majorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme><a:fmtScheme name="Oliver"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="67000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:tint val="97000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:shade val="76000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="94000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad="57150" dist="19050" dir="5400000" algn="ctr" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="63000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/></a:schemeClr></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="93000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="98000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>`
+}
+
+function buildSlideRelsXml(imageRels                                         = [])         {
+  const imageRelXml = imageRels
+    .map((rel) => `<Relationship Id="${rel.rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${rel.target}"/>`)
+    .join('')
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>${imageRelXml}</Relationships>`
+}
+
+function buildAppPropsXml(slideCount        , slideEmu          )         {
+  const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
+  const presentationFormat = isScreen16x9 ? 'Widescreen' : 'Custom'
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Oliver App</Application><Slides>${slideCount}</Slides><PresentationFormat>${presentationFormat}</PresentationFormat></Properties>`
+}
+
+function buildCorePropsXml()         {
+  const iso = new Date().toISOString()
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Oliver Slide Export</dc:title><dc:creator>Oliver App</dc:creator><cp:lastModifiedBy>Oliver App</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${iso}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${iso}</dcterms:modified></cp:coreProperties>`
+}
+
+// ===== pptx-export.ts =====
 function buildBackgroundShapeXml(background                    , slideEmu          , shapeId        )                {
   const canvasGradient = parseLinearGradient(background)
   const canvasColor = parseCssColor(background)
@@ -3684,88 +3695,6 @@ function buildSlideXml(
 
   const xml = buildSlideTreeXml(shapes)
   return { xml, relsXml: buildSlideRelsXml(imageRels) }
-}
-
-const IMAGE_EXT_CONTENT_TYPE                         = {
-  png: 'image/png',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp',
-}
-
-function buildContentTypesXml(slideCount        , imageExtensions           = [])         {
-  const slideOverrides = Array.from({ length: slideCount }, (_, index) =>
-    `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
-  ).join('')
-
-  const imageDefaults = Array.from(new Set(imageExtensions))
-    .map((ext) => `<Default Extension="${ext}" ContentType="${IMAGE_EXT_CONTENT_TYPE[ext] || 'application/octet-stream'}"/>`)
-    .join('')
-
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>${slideOverrides}</Types>`
-}
-
-function buildPresentationXml(slideCount        , slideEmu          )         {
-  const slideIds = Array.from({ length: slideCount }, (_, index) =>
-    `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`,
-  ).join('')
-
-  // Emit the type hint only for the exact 16:9 ratio; for any other size cx/cy are
-  // authoritative and a mismatched type hint would confuse PowerPoint.
-  const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
-  const sizeType = isScreen16x9 ? ' type="screen16x9"' : ''
-
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:presentation xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="${slideEmu.w}" cy="${slideEmu.h}"${sizeType}/><p:notesSz cx="6858000" cy="9144000"/><p:defaultTextStyle/></p:presentation>`
-}
-
-function buildPresentationRelsXml(slideCount        )         {
-  const slideRels = Array.from({ length: slideCount }, (_, index) =>
-    `<Relationship Id="rId${index + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`,
-  ).join('')
-
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>${slideRels}</Relationships>`
-}
-
-function buildRootRelsXml()         {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`
-}
-
-function buildSlideMasterXml()         {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sldMaster xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:cSld name="Master"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>`
-}
-
-function buildSlideMasterRelsXml()         {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/></Relationships>`
-}
-
-function buildSlideLayoutXml()         {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sldLayout xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}" type="blank" preserve="1"><p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`
-}
-
-function buildSlideLayoutRelsXml()         {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>`
-}
-
-function buildThemeXml()         {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<a:theme xmlns:a="${A_NS}" name="Oliver Theme"><a:themeElements><a:clrScheme name="Oliver"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F2937"/></a:dk2><a:lt2><a:srgbClr val="F9FAFB"/></a:lt2><a:accent1><a:srgbClr val="EC4899"/></a:accent1><a:accent2><a:srgbClr val="3B82F6"/></a:accent2><a:accent3><a:srgbClr val="10B981"/></a:accent3><a:accent4><a:srgbClr val="F59E0B"/></a:accent4><a:accent5><a:srgbClr val="8B5CF6"/></a:accent5><a:accent6><a:srgbClr val="EF4444"/></a:accent6><a:hlink><a:srgbClr val="2563EB"/></a:hlink><a:folHlink><a:srgbClr val="7C3AED"/></a:folHlink></a:clrScheme><a:fontScheme name="Oliver"><a:majorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme><a:fmtScheme name="Oliver"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="67000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:tint val="97000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:shade val="76000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="94000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad="57150" dist="19050" dir="5400000" algn="ctr" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="63000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/></a:schemeClr></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="93000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="98000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>`
-}
-
-function buildSlideRelsXml(imageRels                                         = [])         {
-  const imageRelXml = imageRels
-    .map((rel) => `<Relationship Id="${rel.rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${rel.target}"/>`)
-    .join('')
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>${imageRelXml}</Relationships>`
-}
-
-function buildAppPropsXml(slideCount        , slideEmu          )         {
-  const isScreen16x9 = slideEmu.w === SLIDE_WIDTH_EMU && slideEmu.h === SLIDE_HEIGHT_EMU
-  const presentationFormat = isScreen16x9 ? 'Widescreen' : 'Custom'
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Oliver App</Application><Slides>${slideCount}</Slides><PresentationFormat>${presentationFormat}</PresentationFormat></Properties>`
-}
-
-function buildCorePropsXml()         {
-  const iso = new Date().toISOString()
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Oliver Slide Export</dc:title><dc:creator>Oliver App</dc:creator><cp:lastModifiedBy>Oliver App</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${iso}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${iso}</dcterms:modified></cp:coreProperties>`
 }
 
 function convertSlidesToPptx(slidesInput                        )                        {

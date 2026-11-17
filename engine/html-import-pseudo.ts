@@ -5,7 +5,7 @@ import { getCssImportUrl, parseRuleDeclarations, stripWrappingQuotes } from './h
 import { measureNodeRect, readComputedStyleSafe } from './html-import-render'
 import { extractStyle, parseRuleValueExists } from './html-import-values'
 import { asCanonicalDimension, asCanonicalDimensionOptional, parseStylePositionPx, parseStylePx } from './html-import-position'
-import { getNodeLabel } from './html-import-markup'
+import { escapeAttribute, getNodeLabel } from './html-import-markup'
 import { escapeHtmlText } from './html-import-raster'
 
 function parsePseudoLayerDescriptors(styleText: string, root: HTMLElement): PseudoLayerDescriptor[] {
@@ -73,7 +73,7 @@ function buildPseudoContent(styleMap: Record<string, string>, pseudoNodeLabel: s
       return ''
     }
     warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content URL converted to image fallback.')
-    return `<img alt="${pseudoNodeLabel}" src="${parsedUrl}" />`
+    return `<img alt="${escapeAttribute(pseudoNodeLabel)}" src="${escapeAttribute(parsedUrl)}" />`
   }
 
   if (/^(attr|counters?)\(/i.test(rawContent)) {

@@ -160,25 +160,22 @@ function indexNodesById(sandboxDoc: Document): Map<string, HTMLElement> {
   return nodesById
 }
 
-export async function buildRenderSnapshot(doc: Document, root: HTMLElement, styleChunks: InlinedStyleChunk[]): Promise<RenderSnapshot> {
-  if (typeof document === 'undefined' || !document.body) return emptyRenderSnapshot()
-
-  const iframe = createHiddenRenderFrame()
+// Lay the slide out inside the frame. Returns null when the frame has no document or body to use.
+async function fillRenderFrame(
+  iframe: HTMLIFrameElement,
+  doc: Document,
+  root: HTMLElement,
+  styleChunks: InlinedStyleChunk[],
+): Promise<RenderSnapshot | null> {
   const sandboxDoc = iframe.contentDocument
-  if (!sandboxDoc) {
-    iframe.remove()
-    return emptyRenderSnapshot()
-  }
+  if (!sandboxDoc) return null
 
   sandboxDoc.open()
   sandboxDoc.write('<!doctype html><html><head></head><body></body></html>')
   sandboxDoc.close()
 
   const sandboxBody = sandboxDoc.body
-  if (!sandboxBody) {
-    iframe.remove()
-    return emptyRenderSnapshot()
-  }
+  if (!sandboxBody) return null
 
   sandboxBody.style.margin = '0'
   sandboxBody.style.padding = '0'
@@ -203,6 +200,22 @@ export async function buildRenderSnapshot(doc: Document, root: HTMLElement, styl
       iframe.remove()
     },
   }
+}
+
+export async function buildRenderSnapshot(doc: Document, root: HTMLElement, styleChunks: InlinedStyleChunk[]): Promise<RenderSnapshot> {
+  if (typeof document === 'undefined' || !document.body) return emptyRenderSnapshot()
+
+  const iframe = createHiddenRenderFrame()
+  try {
+    const snapshot = await fillRenderFrame(iframe, doc, root, styleChunks)
+    if (snapshot) return snapshot
+  } catch (error) {
+    // A failed layout must not leave its offscreen frame in the page.
+    iframe.remove()
+    throw error
+  }
+  iframe.remove()
+  return emptyRenderSnapshot()
 }
 
 export function hasOwnTextNode(node: HTMLElement): boolean {

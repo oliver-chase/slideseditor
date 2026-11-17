@@ -15,7 +15,17 @@ export function resolveSvgImageFallback(node: HTMLElement, nodeLabel: string, wa
     .trim()
   const encodedMarkup = encodeURIComponent(compactMarkup)
   warnings.push('Node "' + nodeLabel + '" imported as inline SVG image fallback.')
-  return `<img alt="${nodeLabel}" src="data:image/svg+xml;utf8,${encodedMarkup}" />`
+  return `<img alt="${escapeAttribute(nodeLabel)}" src="data:image/svg+xml;utf8,${encodedMarkup}" />`
+}
+
+// Escape a value for a double-quoted HTML attribute.
+export function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 function estimateNodeAreaFromDeclaredSize(node: HTMLElement): number {
@@ -26,19 +36,24 @@ function estimateNodeAreaFromDeclaredSize(node: HTMLElement): number {
   return width * height
 }
 
-function sanitizeNodeInPlace(root: HTMLElement): void {
-  root.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(el => el.remove())
+// Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside
+// the scheme, so they are removed before the check: "java&#9;script:" is still javascript:.
+function isScriptUrl(value: string): boolean {
+  const compact = value.replace(/[\u0000-\u0020\u007f-\u009f]+/g, '').toLowerCase()
+  return compact.startsWith('javascript:') || compact.startsWith('vbscript:') || compact.startsWith('data:text/html')
+}
+
+const URL_ATTRIBUTES = new Set(['href', 'src', 'xlink:href', 'formaction', 'action', 'poster', 'background'])
+
+export function sanitizeNodeInPlace(root: HTMLElement): void {
+  // animate and set can rewrite an href to a script URL after the page loads.
+  root.querySelectorAll('script,style,iframe,object,embed,link,meta,base,animate,set').forEach(el => el.remove())
 
   const allNodes = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))]
   for (const element of allNodes) {
     for (const attr of Array.from(element.attributes)) {
       const attrName = attr.name.toLowerCase()
-      const attrValue = attr.value.trim().toLowerCase()
-      if (attrName.startsWith('on')) {
-        element.removeAttribute(attr.name)
-        continue
-      }
-      if ((attrName === 'href' || attrName === 'src') && attrValue.startsWith('javascript:')) {
+      if (attrName.startsWith('on') || (URL_ATTRIBUTES.has(attrName) && isScriptUrl(attr.value))) {
         element.removeAttribute(attr.name)
       }
     }

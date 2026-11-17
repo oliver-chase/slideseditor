@@ -859,25 +859,22 @@ function indexNodesById(sandboxDoc          )                           {
   return nodesById
 }
 
-async function buildRenderSnapshot(doc          , root             , styleChunks                     )                          {
-  if (typeof document === 'undefined' || !document.body) return emptyRenderSnapshot()
-
-  const iframe = createHiddenRenderFrame()
+// Lay the slide out inside the frame. Returns null when the frame has no document or body to use.
+async function fillRenderFrame(
+  iframe                   ,
+  doc          ,
+  root             ,
+  styleChunks                     ,
+)                                 {
   const sandboxDoc = iframe.contentDocument
-  if (!sandboxDoc) {
-    iframe.remove()
-    return emptyRenderSnapshot()
-  }
+  if (!sandboxDoc) return null
 
   sandboxDoc.open()
   sandboxDoc.write('<!doctype html><html><head></head><body></body></html>')
   sandboxDoc.close()
 
   const sandboxBody = sandboxDoc.body
-  if (!sandboxBody) {
-    iframe.remove()
-    return emptyRenderSnapshot()
-  }
+  if (!sandboxBody) return null
 
   sandboxBody.style.margin = '0'
   sandboxBody.style.padding = '0'
@@ -902,6 +899,22 @@ async function buildRenderSnapshot(doc          , root             , styleChunks
       iframe.remove()
     },
   }
+}
+
+async function buildRenderSnapshot(doc          , root             , styleChunks                     )                          {
+  if (typeof document === 'undefined' || !document.body) return emptyRenderSnapshot()
+
+  const iframe = createHiddenRenderFrame()
+  try {
+    const snapshot = await fillRenderFrame(iframe, doc, root, styleChunks)
+    if (snapshot) return snapshot
+  } catch (error) {
+    // A failed layout must not leave its offscreen frame in the page.
+    iframe.remove()
+    throw error
+  }
+  iframe.remove()
+  return emptyRenderSnapshot()
 }
 
 function hasOwnTextNode(node             )          {
@@ -1527,7 +1540,17 @@ function resolveSvgImageFallback(node             , nodeLabel        , warnings 
     .trim()
   const encodedMarkup = encodeURIComponent(compactMarkup)
   warnings.push('Node "' + nodeLabel + '" imported as inline SVG image fallback.')
-  return `<img alt="${nodeLabel}" src="data:image/svg+xml;utf8,${encodedMarkup}" />`
+  return `<img alt="${escapeAttribute(nodeLabel)}" src="data:image/svg+xml;utf8,${encodedMarkup}" />`
+}
+
+// Escape a value for a double-quoted HTML attribute.
+function escapeAttribute(value        )         {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 function estimateNodeAreaFromDeclaredSize(node             )         {
@@ -1538,19 +1561,24 @@ function estimateNodeAreaFromDeclaredSize(node             )         {
   return width * height
 }
 
+// Script-bearing URL schemes. Browsers ignore tabs, newlines and other control characters inside
+// the scheme, so they are removed before the check: "java&#9;script:" is still javascript:.
+function isScriptUrl(value        )          {
+  const compact = value.replace(/[\u0000-\u0020\u007f-\u009f]+/g, '').toLowerCase()
+  return compact.startsWith('javascript:') || compact.startsWith('vbscript:') || compact.startsWith('data:text/html')
+}
+
+const URL_ATTRIBUTES = new Set(['href', 'src', 'xlink:href', 'formaction', 'action', 'poster', 'background'])
+
 function sanitizeNodeInPlace(root             )       {
-  root.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(el => el.remove())
+  // animate and set can rewrite an href to a script URL after the page loads.
+  root.querySelectorAll('script,style,iframe,object,embed,link,meta,base,animate,set').forEach(el => el.remove())
 
   const allNodes = [root, ...Array.from(root.querySelectorAll             ('*'))]
   for (const element of allNodes) {
     for (const attr of Array.from(element.attributes)) {
       const attrName = attr.name.toLowerCase()
-      const attrValue = attr.value.trim().toLowerCase()
-      if (attrName.startsWith('on')) {
-        element.removeAttribute(attr.name)
-        continue
-      }
-      if ((attrName === 'href' || attrName === 'src') && attrValue.startsWith('javascript:')) {
+      if (attrName.startsWith('on') || (URL_ATTRIBUTES.has(attrName) && isScriptUrl(attr.value))) {
         element.removeAttribute(attr.name)
       }
     }
@@ -1870,7 +1898,7 @@ function buildPseudoContent(styleMap                        , pseudoNodeLabel   
       return ''
     }
     warnings.push('Pseudo-element "' + pseudoNodeLabel + '" content URL converted to image fallback.')
-    return `<img alt="${pseudoNodeLabel}" src="${parsedUrl}" />`
+    return `<img alt="${escapeAttribute(pseudoNodeLabel)}" src="${escapeAttribute(parsedUrl)}" />`
   }
 
   if (/^(attr|counters?)\(/i.test(rawContent)) {

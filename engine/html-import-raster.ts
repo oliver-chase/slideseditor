@@ -183,10 +183,15 @@ function findRasterCandidates(renderRoot: HTMLElement, win: Window): RasterCandi
 function plainTextOf(el: HTMLElement, gradientSet: Set<HTMLElement>): string {
   let text = ''
   const walker = (el.ownerDocument || document).createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  const win = el.ownerDocument?.defaultView
   while (walker.nextNode()) {
     let p = walker.currentNode.parentElement
     let skip = false
-    while (p && p !== el) { if (gradientSet.has(p)) { skip = true; break } p = p.parentElement }
+    while (p && p !== el) {
+      // A gradient-text descendant becomes its own image, and a hidden descendant adds no text.
+      if (gradientSet.has(p) || (win && !isVisibleEl(p, win))) { skip = true; break }
+      p = p.parentElement
+    }
     if (!skip) text += walker.currentNode.textContent
   }
   return text.replace(/\s+/g, ' ').trim()

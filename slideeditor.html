@@ -2228,10 +2228,15 @@ function findRasterCandidates(renderRoot             , win        )             
 function plainTextOf(el             , gradientSet                  )         {
   let text = ''
   const walker = (el.ownerDocument || document).createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  const win = el.ownerDocument?.defaultView
   while (walker.nextNode()) {
     let p = walker.currentNode.parentElement
     let skip = false
-    while (p && p !== el) { if (gradientSet.has(p)) { skip = true; break } p = p.parentElement }
+    while (p && p !== el) {
+      // A gradient-text descendant becomes its own image, and a hidden descendant adds no text.
+      if (gradientSet.has(p) || (win && !isVisibleEl(p, win))) { skip = true; break }
+      p = p.parentElement
+    }
     if (!skip) text += walker.currentNode.textContent
   }
   return text.replace(/\s+/g, ' ').trim()
@@ -2704,7 +2709,6 @@ async function convertHtmlToSlideComponents(html        )                       
     const canvasBackground = resolveCanvasBackground(doc, renderSnapshot, declared)
     const selection = selectImportNodes(allNodes, renderSnapshot, root)
     const contentBounds = measureContentBounds(selection.nodes, renderSnapshot, root)
-    const pseudoByHost = extractPseudoLayers(styleSources, renderSnapshot, root, warnings)
     const size = resolveSourceCanvasSize(declared, contentBounds, warnings)
     warnAboutImportMode(selection, size, warnings)
 
@@ -2715,6 +2719,8 @@ async function convertHtmlToSlideComponents(html        )                       
     const rasterComponents = await buildRasterizedSlide(renderSnapshot, root, size.width, size.height, warnings)
     const components                   = rasterComponents ? rasterComponents.slice() : []
 
+    // Pseudo-element layers matter only on the native path: the rasterized artwork already draws them.
+    const pseudoByHost = rasterComponents ? new Map                          () : extractPseudoLayers(styleSources, renderSnapshot, root, warnings)
     let nodesForBuild                = []
     let strippedIdsByContainer = new Map                     ()
     if (!rasterComponents) {

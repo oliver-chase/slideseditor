@@ -230,7 +230,6 @@ export async function convertHtmlToSlideComponents(html: string): Promise<SlideI
     const canvasBackground = resolveCanvasBackground(doc, renderSnapshot, declared)
     const selection = selectImportNodes(allNodes, renderSnapshot, root)
     const contentBounds = measureContentBounds(selection.nodes, renderSnapshot, root)
-    const pseudoByHost = extractPseudoLayers(styleSources, renderSnapshot, root, warnings)
     const size = resolveSourceCanvasSize(declared, contentBounds, warnings)
     warnAboutImportMode(selection, size, warnings)
 
@@ -241,6 +240,8 @@ export async function convertHtmlToSlideComponents(html: string): Promise<SlideI
     const rasterComponents = await buildRasterizedSlide(renderSnapshot, root, size.width, size.height, warnings)
     const components: SlideComponent[] = rasterComponents ? rasterComponents.slice() : []
 
+    // Pseudo-element layers matter only on the native path: the rasterized artwork already draws them.
+    const pseudoByHost = rasterComponents ? new Map<string, SlideComponent[]>() : extractPseudoLayers(styleSources, renderSnapshot, root, warnings)
     let nodesForBuild: HTMLElement[] = []
     let strippedIdsByContainer = new Map<string, Set<string>>()
     if (!rasterComponents) {

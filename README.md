@@ -10,6 +10,12 @@ The browser is only the conversion step. The actual editing happens in PowerPoin
 
 It is built for anyone who designs slides in HTML and needs the result as a native, editable PowerPoint deck.
 
+## Try it in a minute
+
+1. Open [slideeditor.html](slideeditor.html) in a browser. In a clone of this repo it sits at the top level.
+2. Press Import, choose [examples/sample-slide.html](examples/sample-slide.html), and the converted layers appear.
+3. Press Export PPTX and open the file in PowerPoint.
+
 ## Convert a slide
 
 Open `slideeditor.html` in any modern browser.

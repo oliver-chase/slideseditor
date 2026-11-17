@@ -47,4 +47,7 @@ const dirty = await slideXml('Bad\u0001char\u000b\tkept')
 assert.ok(!/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(dirty), 'control characters are stripped')
 assert.ok(dirty.includes('Badchar\tkept'), 'tab is kept')
 
+const doubled = await slideXml('&amp;lt;')
+assert.ok(doubled.includes('>&amp;lt;<'), 'escaped text is decoded once')
+
 console.log('pptx-export tests passed')

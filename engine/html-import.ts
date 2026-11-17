@@ -219,7 +219,7 @@ async function fetchWithTimeout(url: string, timeoutMs = 1500): Promise<string |
 }
 
 function stripCssComments(cssText: string): string {
-  return cssText.replace(/\/\*[\s\S]*?\*\//g, '')
+  return cssText.replace(/\/\*[\s\S]*?\*\//g, (comment) => ' '.repeat(comment.length))
 }
 
 function stripWrappingQuotes(value: string): string {
@@ -246,7 +246,6 @@ function parseInlineStyleImport(rawImportStatement: string): string | null {
   const raw = rawImportStatement.trim().replace(/^@import\s+/i, '')
   const statement = raw.endsWith(';') ? raw.slice(0, -1).trim() : raw
   const tokens = statement.split(/\s+/)
-  if (tokens.length === 0) return null
 
   const candidateUrl = getCssImportUrl(tokens[0] || '')
   if (!candidateUrl) return null
@@ -344,7 +343,7 @@ async function inlineExternalStylesheets(doc: Document, warnings: string[]): Pro
   const linkByNode = new Map<HTMLLinkElement, Promise<string | null>>()
   for (const stylesheet of stylesheetNodes) {
     const href = parseStylesheetHref(stylesheet, baseUrl)
-    linkByNode.set(stylesheet, href ? fetchWithTimeout(href).then((cssText) => cssText) : Promise.resolve(null))
+    linkByNode.set(stylesheet, href ? fetchWithTimeout(href) : Promise.resolve(null))
   }
   const fetched = await Promise.allSettled(Array.from(linkByNode.values()))
 
@@ -550,7 +549,7 @@ function buildPseudoContent(styleMap: Record<string, string>, pseudoNodeLabel: s
     return `<img alt="${pseudoNodeLabel}" src="${parsedUrl}" />`
   }
 
-  return stripWrappingQuotes(rawContent)
+  return escapeHtmlText(stripWrappingQuotes(rawContent))
 }
 
 function parsePseudoDimension(styleMap: Record<string, string>, key: 'width' | 'height', nodeLabel: string, warnings: string[]): number | undefined {
@@ -795,8 +794,9 @@ function inferType(node: HTMLElement): SlideComponentType {
 
   if (tag === 'svg') return 'logo'
   if (tag === 'img' && (className.includes('logo') || alt.includes('logo'))) return 'logo'
+  if (className.includes('subheading') || className.includes('subtitle')) return 'subheading'
   if (tag === 'h1' || tag === 'h2' || className.includes('heading') || className.includes('title')) return 'heading'
-  if (tag === 'h3' || tag === 'h4' || className.includes('subheading') || className.includes('subtitle')) return 'subheading'
+  if (tag === 'h3' || tag === 'h4') return 'subheading'
   if (className.includes('tagline') || className.includes('tag-line')) return 'tag-line'
   if (className.includes('stat') || className.includes('metric')) return 'stat'
   if (className.includes('card') || className.includes('artifact') || /\bart\b/.test(className)) return 'card'
@@ -850,7 +850,7 @@ function parseStylePositionPx(
   if (isPxLike(parsed)) return parsed.value
 
   if (parsed.unit === '%') {
-    warnings.push('Node "' + nodeLabel + '" uses unsupported ' + key + ' unit "%"; ignored.')
+    warnings.push('Node "' + nodeLabel + '" uses unsupported ' + key + ' unit "%"; approximated from the canvas size.')
     return axisSize > 0 ? (axisSize * parsed.value) / 100 : undefined
   }
 
@@ -910,7 +910,7 @@ function parseComputedPositionPx(
   if (isPxLike(parsed)) return parsed.value
 
   if (parsed.unit === '%') {
-    warnings.push('Node "' + nodeLabel + '" uses unsupported computed ' + key + ' unit "%"; ignored.')
+    warnings.push('Node "' + nodeLabel + '" uses unsupported computed ' + key + ' unit "%"; approximated from the canvas size.')
     return axisSize > 0 ? (axisSize * parsed.value) / 100 : undefined
   }
 

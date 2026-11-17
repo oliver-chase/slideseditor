@@ -117,7 +117,7 @@
   <button class="btn" id="exportHtmlBtn" disabled>Export HTML</button>
   <button class="btn primary" id="exportPptxBtn" disabled>Export PPTX</button>
 </header>
-<input type="file" id="fileInput" accept=".html,.htm,.css,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
+<input type="file" id="fileInput" accept=".html,.htm,.css,.png,.jpg,.jpeg,.gif,.webp,.svg" multiple hidden />
 <main>
   <div id="stage">
     <div id="empty">Import an HTML slide — or drag &amp; drop it anywhere here — to convert it into an editable PowerPoint deck. Text becomes real text boxes, images and gradients become separate picture/shape layers, all movable and resizable in PowerPoint. A PNG imports as a single picture layer.</div>
@@ -4636,7 +4636,10 @@ async function inlineCompanionStylesheets(
       depth = 0;
       stage.classList.remove('dragover');
       const files = e.dataTransfer && e.dataTransfer.files;
-      if (files && files.length) await importFiles(files);
+      if (files && files.length) {
+        closeImport();
+        await importFiles(files);
+      }
     });
   })();
   window.addEventListener('resize', () => { if (state.components.length) renderPreview(); });

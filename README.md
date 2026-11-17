@@ -45,7 +45,7 @@ The converter can preserve editability because HTML already describes a slide as
 
 A positioned HTML element becomes its own PowerPoint layer. Text inside that element becomes its own editable text box. Images and solid shapes convert to their own layers. Gradients and stacked styled boxes are flattened into one locked artwork picture behind the text.
 
-An image file (PNG, JPG, GIF or WebP) has no underlying structure to preserve. It therefore imports as one picture layer.
+An image file (PNG, JPG, GIF, WebP or SVG) has no underlying structure to preserve. It therefore imports as one picture layer.
 
 The converter does not attempt to extract text from images with OCR. Reliable OCR would be a separate problem and is outside the scope of this tool.
 
@@ -94,7 +94,7 @@ for t in tests/*.test.mjs; do node "$t"; done
 ## What it supports
 
 * HTML input — converted into editable PowerPoint text boxes, images, and shapes
-* PNG, JPG, GIF and WebP input — imported as a single image layer
+* PNG, JPG, GIF, WebP and SVG input — imported as a single image layer (an SVG is drawn to a PNG first)
 * PPTX export — the primary output
 * HTML export — for sharing or inspection
 * Native canvas — preserves the source dimensions
@@ -121,6 +121,8 @@ src/shell.html            Converter UI source
 engine/                   Pure-TypeScript conversion engine
 scripts/build-bundle.mjs  Zero-dependency bundler
 scripts/validate.sh       Runs the commit gates and every test
+examples/sample-slide.html  A slide to try
+docs/                     Catalog, sharing verdict, accepted items and gate lists
 tests/                    Node tests that bundle the engine from source
 ARCHITECTURE.md           How the pieces fit
 ```

@@ -227,6 +227,42 @@ function plainTextOf(el: HTMLElement, gradientSet: Set<HTMLElement>): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
+// The inline styles that make an element's text differ from its parent's: weight, slant, underline and color.
+function emphasisStyle(cs: CSSStyleDeclaration, parent: CSSStyleDeclaration): string {
+  const css: string[] = []
+  const isBold = (style: CSSStyleDeclaration) => Number.parseInt(style.fontWeight, 10) >= 600 || style.fontWeight === 'bold'
+  if (isBold(cs) !== isBold(parent)) css.push('font-weight:' + (isBold(cs) ? 'bold' : 'normal'))
+  if ((cs.fontStyle === 'italic') !== (parent.fontStyle === 'italic')) css.push('font-style:' + (cs.fontStyle === 'italic' ? 'italic' : 'normal'))
+  if (cs.textDecorationLine.includes('underline') && !parent.textDecorationLine.includes('underline')) css.push('text-decoration:underline')
+  if (cs.color !== parent.color) css.push('color:' + cs.color)
+  return css.join(';')
+}
+
+// The element's text as HTML, with each inline element that changes weight, slant, underline or color kept as a
+// styled span, so a bold word set by a CSS rule stays bold in the editable text box. Gradient-text and hidden
+// descendants are left out, as in plainTextOf.
+function inlineRunsHtml(el: HTMLElement, gradientSet: Set<HTMLElement>, win: Window): string {
+  const parts: string[] = []
+  const walk = (node: Node, parent: CSSStyleDeclaration): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === 3) {
+        parts.push(escapeHtmlText((child.textContent || '').replace(/\s+/g, ' ')))
+      } else if (child.nodeType === 1) {
+        const element = child as HTMLElement
+        if (gradientSet.has(element) || !isVisibleEl(element, win)) continue
+        if (element.tagName === 'BR') { parts.push('<br>'); continue }
+        const cs = win.getComputedStyle(element)
+        const css = emphasisStyle(cs, parent)
+        if (css) parts.push('<span style="' + css + '">')
+        walk(element, cs)
+        if (css) parts.push('</span>')
+      }
+    }
+  }
+  walk(el, win.getComputedStyle(el))
+  return parts.join('').replace(/^\s+|\s+$/g, '')
+}
+
 // A plain-text run is the OUTERMOST non-gradient element that carries text: it must
 // have its own text, not be (or sit inside) a gradient-text element, and have no
 // ancestor that also carries its own text, otherwise a child with text (e.g. a
@@ -266,12 +302,13 @@ function buildTextBoxComponent(
 ): SlideComponent | null {
   const text = plainTextOf(el, gradientSet)
   if (!text) return null
+  const win = el.ownerDocument?.defaultView
   return {
     id,
     type: 'text',
     sourceLabel: getNodeLabel(el),
     ...measuredBox(el, measureRoot),
-    content: escapeHtmlText(text),
+    content: win ? inlineRunsHtml(el, gradientSet, win) : escapeHtmlText(text),
     style: extractStyle(parseRuleDeclarations(el.getAttribute('style') || ''), readComputedStyleSafe(el), warnings, getNodeLabel(el)),
     locked: false,
     visible: true,

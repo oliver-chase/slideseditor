@@ -140,6 +140,36 @@ async function rasterizeElementInline(el: HTMLElement, win: Window, scale: numbe
 // Render the whole slide in context (keeps the page <style>, so boxes/meters/gradients
 // lay out exactly as designed) with every text glyph stripped, producing the flat art
 // layer. Returns a full-canvas PNG data URI, or null if the render fails.
+// The artwork is drawn through an SVG image, which cannot load web addresses. Images that the
+// slide names at a web address are fetched first and embedded as data URIs, up to a size limit each.
+const REMOTE_ASSET_MAX_BYTES = 5_000_000
+
+async function fetchAsDataUrl(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, { mode: 'cors', credentials: 'omit' })
+    if (!response.ok) return null
+    const blob = await response.blob()
+    if (blob.size > REMOTE_ASSET_MAX_BYTES) return null
+    return await new Promise<string | null>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+async function inlineRemoteImages(root: HTMLElement): Promise<void> {
+  await Promise.all(Array.from(root.querySelectorAll('img')).map(async (img) => {
+    const src = img.getAttribute('src') || ''
+    if (!/^https?:/i.test(src)) return
+    const data = await fetchAsDataUrl(src)
+    if (data) img.setAttribute('src', data)
+  }))
+}
+
 async function rasterizeArtLayer(
   renderRoot: HTMLElement,
   win: Window,
@@ -160,6 +190,7 @@ async function rasterizeArtLayer(
   const wrap = document.createElementNS(XHTML_NS, 'div') as unknown as HTMLElement
   wrap.setAttribute('style', bodyCss + 'width:' + w + 'px;height:' + h + 'px;margin:0;position:relative;overflow:hidden;')
   for (const st of Array.from(sdoc.querySelectorAll('style'))) wrap.appendChild(st.cloneNode(true))
+  await inlineRemoteImages(clone)
   for (const ch of Array.from(clone.childNodes)) wrap.appendChild(ch)
   const inner = new XMLSerializer().serializeToString(wrap)
   return await drawSvgToPng(svgDataUrlFromSerializedXhtml(inner, w, h), w, h, scale)

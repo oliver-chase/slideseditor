@@ -35,3 +35,7 @@ what moves through it.
 ## Enforcement
 
 1. `bash scripts/validate.sh`, which also runs `npm run validate` when the repo has one
+
+## Contract exceptions
+
+- learning: a local converter tool with no usage data. Expires 2027-02-01

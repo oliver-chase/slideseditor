@@ -8,3 +8,12 @@
 
 # Local scratch work (comparison pages, backups)
 scratch/
+
+# Credentials and secrets
+.env.*
+!.env.example
+!.env.local.example
+*.pem
+*.key
+.secrets/*
+!.secrets/README.md

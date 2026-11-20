@@ -39,3 +39,10 @@ what moves through it.
 ## Contract exceptions
 
 - learning: a local converter tool with no usage data. Expires 2027-02-01
+
+## Top-level folders
+
+- `engine/`: the document engine: import, export and layout logic
+- `examples/`: sample inputs for the engine and its tests
+- `src/`: application source code
+- `tests/`: automated tests

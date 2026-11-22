@@ -2,7 +2,6 @@
 f72c32a27ca1dfb3fc118a1407fd5bc60c60c08a .githooks/commit-msg
 2da95f45025f52c68abc627ff7abb4885db289f6 .githooks/pre-commit
 73c18212e9fbcc3ffff934cce5bddf866da12c4f .githooks/pre-push
-5ba1338e5aaec9ba32392788a18d02dce8e8d452 .githooks/ste-lint-joined.py
 3bdcab79d89cd84848ed6101b56be9d52a807251 .github/CODEOWNERS
 8b82cc28acfc4748a1200d55bcf9d49da8907a90 .gitignore
 3e6edacc57230ab2eeea40d33a38e1426a71e4d6 .secrets/README.md

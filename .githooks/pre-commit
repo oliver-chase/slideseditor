@@ -309,7 +309,7 @@ else
     # A repo named like its owner would strip the owner's own name from every line, so only its path is removed.
     if [ "${id_self_path##*/}" != "${id_self_path%%/*}" ]; then
       printf '%s\n' "${id_self_path##*/}"
-      # Prose writes the repo name with spaces ("account planning tool" for account-planning-tool).
+      # Prose writes the repo name with spaces ("my repo name" for my-repo-name).
       printf '%s\n' "${id_self_path##*/}" | tr '_-' '  '
     fi
     git show ":package.json" 2>/dev/null | python3 -c 'import json,sys

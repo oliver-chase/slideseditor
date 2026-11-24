@@ -38,7 +38,7 @@ what moves through it.
 
 ## Contract exceptions
 
-- learning: a local converter tool with no usage data. Expires 2027-02-01
+None.
 
 ## Top-level folders
 

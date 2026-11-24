@@ -33,7 +33,7 @@ assert.ok(hiddenHtml.includes('<title>Slide Export</title>'), 'the export carrie
 for (const url of ['javascript:alert(1)', 'JaVa\tScRiPt:alert(1)', ' vbscript:x', 'data:text/html,<b>x</b>']) {
   assert.ok(E.isScriptUrl(url), url + ' is a script URL')
 }
-for (const url of ['https://example.test/a', 'data:image/png;base64,AAAA', '#anchor', 'mailto:a@b.test']) {
+for (const url of ['https://example.test/a', 'data:image/png;base64,AAAA', '#anchor', 'mailto:someone']) {
   assert.ok(!E.isScriptUrl(url), url + ' is not a script URL')
 }
 
